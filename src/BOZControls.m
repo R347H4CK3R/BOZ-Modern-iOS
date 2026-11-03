@@ -67,9 +67,10 @@ static void ApplyProfile(void) {
     uintptr_t config=0;int16_t mode=-1;float xy[2]={0};
     if(!Read(B+0x637228,&config,8) || !config || !Read(config+0x12e,&mode,2) || mode<0 || mode>2 || !Read(config+0x124,xy,8) || !isfinite(xy[0]) || !isfinite(xy[1]) || xy[0]<0 || xy[0]>1 || xy[1]<0 || xy[1]>1) return;
     int16_t touch=1;
-    float values[2]={Sensitivity,Sensitivity};
+    float sensitivity=atomic_load(&Sensitivity);
+    float values[2]={sensitivity,sensitivity};
     BOOL okay=Write(config+0x12e,&touch,2) && Write(config+0x124,values,sizeof(values));
-    if(okay) { atomic_store(&ProfileDirty,0);Log([NSString stringWithFormat:@"touch-profile applied manual-fire=1 sensitivity=%.2f next-round-layout=1",Sensitivity]); }
+    if(okay) { atomic_store(&ProfileDirty,0);Log([NSString stringWithFormat:@"touch-profile applied manual-fire=1 sensitivity=%.2f next-round-layout=1",(double)sensitivity]); }
 }
 static void TickControls(void) {
     uintptr_t manager=0;

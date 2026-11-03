@@ -27,7 +27,7 @@ jobs:
       - name: Compile unsigned ARM64 controls add-on
         run: |
           mkdir output
-          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=15.0 -fobjc-arc -std=gnu11 -O2 -dynamiclib -framework Foundation -framework UIKit -Wl,-install_name,@rpath/BOZControls.dylib -Wl,-headerpad,0x1000 -o output/BOZControls.dylib src/BOZControls.m
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=15.0 -fobjc-arc -std=gnu11 -O2 -dynamiclib -framework Foundation -framework UIKit -framework CoreGraphics -Wl,-install_name,@rpath/BOZControls.dylib -Wl,-headerpad,0x1000 -o output/BOZControls.dylib src/BOZControls.m
           codesign --remove-signature output/BOZControls.dylib
           if codesign -d output/BOZControls.dylib 2>/dev/null; then exit 1; fi
           test "$(lipo -archs output/BOZControls.dylib)" = arm64

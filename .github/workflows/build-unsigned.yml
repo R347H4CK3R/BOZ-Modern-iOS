@@ -9,6 +9,7 @@ on:
       - 'tools/check_loader_compatibility.py'
       - 'tools/normalize_marmalade.py'
       - 'src/BOZDiagnostics.m'
+      - 'src/BOZStartupTrace.m'
 concurrency:
   group: boz-unsigned-build
   cancel-in-progress: true
@@ -51,8 +52,8 @@ jobs:
           mkdir verify
           unzip -q repair/boz-v1.3.5-mp.ipa -d verify
           python3 tools/normalize_marmalade.py verify/Payload/blackops.app/blackops
-          plutil -replace CFBundleVersion -string 135.4 verify/Payload/blackops.app/Info.plist
-          plutil -replace CFBundleDisplayName -string 'COD:BOZ Layout Fix' verify/Payload/blackops.app/Info.plist
+          plutil -replace CFBundleVersion -string 135.5 verify/Payload/blackops.app/Info.plist
+          plutil -replace CFBundleDisplayName -string 'COD:BOZ Trace v2' verify/Payload/blackops.app/Info.plist
           find verify/Payload -type f | while IFS= read -r f; do
             if file "$f" | grep -q 'Mach-O'; then
               codesign --remove-signature "$f" || exit 1

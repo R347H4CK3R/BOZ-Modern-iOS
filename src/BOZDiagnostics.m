@@ -4,6 +4,8 @@
 #import <signal.h>
 #import <fcntl.h>
 #import <unistd.h>
+#import <sys/ucontext.h>
+#import <mach/arm/thread_status.h>
 
 static NSString *BOZLogPath;
 static NSString *BOZCrashPath;
@@ -48,15 +50,26 @@ static OSStatus BOZSaveToken(NSString *token) {
 }
 
 // Only async-signal-safe operations here. The OS retains the native crash report.
-static void BOZSignal(int sig) {
-    char record[32] = "fatal-signal=";
-    size_t length = 13;
-    if (sig >= 10) record[length++] = '0' + sig / 10;
-    record[length++] = '0' + sig % 10;
-    record[length++] = '\n';
-    if (BOZCrashFD >= 0) { write(BOZCrashFD, record, length); fsync(BOZCrashFD); }
-    signal(sig, SIG_DFL);
-    kill(getpid(), sig);
+static struct sigaction BOZPreviousSignals[NSIG];
+static void BOZHex(int fd, const char *label, size_t length, uint64_t value) {
+    char buffer[18]; buffer[0]='0'; buffer[1]='x';
+    const char hex[]="0123456789abcdef";
+    for(int i=0;i<16;i++)buffer[2+i]=hex[(value>>((15-i)*4))&15];
+    write(fd,label,length);write(fd,buffer,sizeof(buffer));write(fd,"\n",1);
+}
+static void BOZSignal(int sig, siginfo_t *info, void *context) {
+    if (BOZCrashFD>=0) {
+        BOZHex(BOZCrashFD,"signal=",7,(uint64_t)sig);
+        if(info)BOZHex(BOZCrashFD,"fault=",6,(uintptr_t)info->si_addr);
+        ucontext_t *uc=(ucontext_t *)context;
+        if(uc && uc->uc_mcontext){
+            BOZHex(BOZCrashFD,"pc=",3,arm_thread_state64_get_pc(uc->uc_mcontext->__ss));
+            BOZHex(BOZCrashFD,"lr=",3,arm_thread_state64_get_lr(uc->uc_mcontext->__ss));
+        }
+        fsync(BOZCrashFD);
+    }
+    sigaction(sig,&BOZPreviousSignals[sig],NULL);
+    kill(getpid(),sig);
 }
 static void BOZException(NSException *exception) {
     // Record exception type only: reasons and stacks can contain private paths.
@@ -178,6 +191,8 @@ __attribute__((constructor)) static void BOZDiagnosticsStart(void) {
         BOZLogPath=[dir stringByAppendingPathComponent:@"session.log"];
         BOZCrashPath=[dir stringByAppendingPathComponent:@"crash.marker"];
         NSString *marker=[NSString stringWithContentsOfFile:BOZCrashPath encoding:NSUTF8StringEncoding error:nil];
+        NSString *lastSession=[NSString stringWithContentsOfFile:BOZLogPath encoding:NSUTF8StringEncoding error:nil];
+        if (lastSession.length) [lastSession writeToFile:[dir stringByAppendingPathComponent:@"previous-session.log"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
         if (marker.length) {
             NSString *previous=[NSString stringWithContentsOfFile:BOZLogPath encoding:NSUTF8StringEncoding error:nil] ?: @"";
             NSString *pending=[dir stringByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingPathExtension:@"pending.log"]];
@@ -187,11 +202,16 @@ __attribute__((constructor)) static void BOZDiagnosticsStart(void) {
         BOZCrashFD=open(BOZCrashPath.fileSystemRepresentation,O_CREAT|O_WRONLY|O_TRUNC,0600);
         BOZPreviousException=NSGetUncaughtExceptionHandler(); NSSetUncaughtExceptionHandler(BOZException);
         int signals[]={SIGABRT,SIGSEGV,SIGBUS,SIGILL,SIGFPE};
-        for (unsigned i=0;i<sizeof(signals)/sizeof(signals[0]);i++) signal(signals[i],BOZSignal);
-        BOZDiagnosticLog([NSString stringWithFormat:@"diagnostics=v1 iOS=%@ ARM64 guest-image-fix=enabled",UIDevice.currentDevice.systemVersion]);
+        for (unsigned i=0;i<sizeof(signals)/sizeof(signals[0]);i++) {
+            struct sigaction action={0}; action.sa_sigaction=BOZSignal;
+            sigemptyset(&action.sa_mask);action.sa_flags=SA_SIGINFO;
+            sigaction(signals[i],&action,&BOZPreviousSignals[signals[i]]);
+        }
+        BOZDiagnosticLog([NSString stringWithFormat:@"diagnostics=v2 iOS=%@ ARM64 guest-image-fix=enabled",UIDevice.currentDevice.systemVersion]);
         NSNotificationCenter *nc=NSNotificationCenter.defaultCenter;
         [nc addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *n) {
             BOZDiagnosticLog(@"lifecycle=active");
+
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC),dispatch_get_main_queue(),^{ BOZInstallLogButton();
                 for (NSString *file in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dir error:nil]) if ([file hasSuffix:@".pending.log"]) { BOZUpload([dir stringByAppendingPathComponent:file],NO); break; }
             });

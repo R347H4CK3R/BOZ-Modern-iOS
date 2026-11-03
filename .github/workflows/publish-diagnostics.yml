@@ -15,6 +15,7 @@ jobs:
       BUILD_RESULT: ${{ github.event.workflow_run.conclusion }}
       REPO: ${{ github.repository }}
     steps:
+      - uses: actions/checkout@v4
       - name: Download verified diagnostic build
         if: env.BUILD_RESULT == 'success'
         run: gh run download "$BUILD_ID" --repo "$REPO" --name BOZ-Modern-iOS-unsigned --dir output
@@ -28,6 +29,9 @@ jobs:
           else
             gh release create startup-trace-v2 BOZ-Modern-iOS-unsigned.ipa BOZ-Modern-iOS-unsigned.sha256 --repo "$REPO" --title 'BOZ unsigned — startup trace v2' --notes 'Startup trace v2 with persistent previous session, fault PC/LR, method checkpoints; structurally ordered VM/file segments with remapped loader references, build 135.5; guest-image offset fix; persistent local diagnostics; optional private GitHub issue reporting using a user-provided fine-grained token stored in Keychain. Package checks passed. Physical-device launch, gameplay and report uploads still require testing.' --prerelease
           fi
+      - name: Update Strata install catalog
+        if: env.BUILD_RESULT == 'success'
+        run: python3 tools/update_strata_source.py
       - name: Record build and publication result
         if: always()
         env:

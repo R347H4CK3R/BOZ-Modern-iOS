@@ -36,7 +36,7 @@ static void Log(NSString *message) {
     if(!docs) return;
     NSString *folder=[docs stringByAppendingPathComponent:@"BOZDiagnostics"];
     [NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
-    NSData *line=[[NSString stringWithFormat:@"%@ controls-v1 %@\n",NSDate.date,message] dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *line=[[NSString stringWithFormat:@"%@ controls-v2 %@\n",NSDate.date,message] dataUsingEncoding:NSUTF8StringEncoding];
     for(NSString *name in @[@"controls.log",@"session.log"]) {
         int fd=open([[folder stringByAppendingPathComponent:name] fileSystemRepresentation],O_WRONLY|O_APPEND|O_CREAT,0600);
         if(fd>=0) { write(fd,line.bytes,line.length);close(fd); }
@@ -92,15 +92,15 @@ static void TickControls(void) {
     if(!ready) { Sent=0;LastManager=0;return; }
     if(manager!=LastManager) { Sent=0;LastManager=manager;Log(@"input-manager ready"); }
     unsigned target=BOZControlsTarget(atomic_load(&Requested),atomic_load(&Enabled),atomic_load(&Active),gameplay,atomic_load(&Editing));
-    unsigned masks[]={BOZFire,BOZAim,BOZReload};
-    uintptr_t functions[]={0x1ef2c4,0x1ef384,0x1ef344};
-    unsigned fields[]={0x79,0x7c,0x7b};
-    for(int i=0;i<3;i++) {
+    unsigned masks[]={BOZFire,BOZAim,BOZReload,BOZSwap};
+    uintptr_t functions[]={0x1ef2c4,0x1ef384,0x1ef344,0x1ef314};
+    unsigned fields[]={0x79,0x7c,0x7b,0x7a};
+    for(int i=0;i<4;i++) {
         BOOL down=(target&masks[i])!=0;uint8_t native=0;
         if(!Read(manager+fields[i],&native,1)) continue;
         BOOL changed=((Sent^target)&masks[i])!=0;
         // Reassert held fire/ADS only while the corresponding physical button
-        // is held. Reload remains an edge, not an automatic repeated command.
+        // is held. Reload and swap remain edges, not an automatic repeated command.
         BOOL reassert=i<2 && down && !native;
         if(!changed&&!reassert) continue;
         if(changed) Log([NSString stringWithFormat:@"button=%u down=%d",masks[i],down]);
@@ -158,7 +158,7 @@ static void Layout(void) {
     UIWindow *window=Window();if(!window||!Overlay) return;
     Overlay.frame=window.bounds;CGRect safe=SafeRect();
     MenuButton.frame=CGRectMake(safe.origin.x+130,safe.origin.y+12,100,42);
-    double defaults[3][2]={{0.90,0.71},{0.78,0.82},{0.66,0.90}};
+    double defaults[4][2]={{0.90,0.71},{0.78,0.82},{0.66,0.90},{0.66,0.68}};
     for(NSUInteger i=0;i<Buttons.count;i++) {
         UIButton *button=Buttons[i];double x=defaults[i][0],y=defaults[i][1];
         NSArray *saved=[NSUserDefaults.standardUserDefaults arrayForKey:[Pref stringByAppendingFormat:@"Position.%lu",(unsigned long)i]];
@@ -203,7 +203,7 @@ static void Layout(void) {
         Sensitivity=value.floatValue;[NSUserDefaults.standardUserDefaults setFloat:Sensitivity forKey:[Pref stringByAppendingString:@"Sensitivity"]];atomic_store(&ProfileDirty,1);
     }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"Reset button positions" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        for(int i=0;i<3;i++) [NSUserDefaults.standardUserDefaults removeObjectForKey:[Pref stringByAppendingFormat:@"Position.%d",i]];
+        for(int i=0;i<4;i++) [NSUserDefaults.standardUserDefaults removeObjectForKey:[Pref stringByAppendingFormat:@"Position.%d",i]];
         Layout();
     }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"Close" style:UIAlertActionStyleCancel handler:nil]];
@@ -227,8 +227,8 @@ static void Install(void) {
         MenuButton=[UIButton buttonWithType:UIButtonTypeSystem];[MenuButton setTitle:@"Controls" forState:UIControlStateNormal];
         MenuButton.backgroundColor=[UIColor.blackColor colorWithAlphaComponent:0.75];MenuButton.layer.cornerRadius=9;[MenuButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
         [MenuButton addTarget:BOZControls.class action:@selector(menu) forControlEvents:UIControlEventTouchUpInside];[Overlay addSubview:MenuButton];
-        NSArray *titles=@[@"FIRE",@"ADS",@"RELOAD"];int bits[]={BOZFire,BOZAim,BOZReload};
-        for(int i=0;i<3;i++) {
+        NSArray *titles=@[@"FIRE",@"ADS",@"RELOAD",@"SWAP"];int bits[]={BOZFire,BOZAim,BOZReload,BOZSwap};
+        for(int i=0;i<4;i++) {
             UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem];button.tag=bits[i];[button setTitle:titles[i] forState:UIControlStateNormal];
             button.titleLabel.font=[UIFont boldSystemFontOfSize:i==0?19:12];button.backgroundColor=[UIColor.blackColor colorWithAlphaComponent:0.45];
             [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];button.layer.borderWidth=2;button.layer.borderColor=[UIColor.whiteColor colorWithAlphaComponent:0.75].CGColor;

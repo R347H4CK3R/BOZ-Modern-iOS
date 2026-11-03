@@ -1,12 +1,14 @@
-# BOZ Touch Controls v1
+# BOZ Touch Controls v2
+
+Adds a movable SWAP button to switch between carried weapons. Hold does not repeatedly cycle weapons.
 
 Small experimental control add-on for Loader Fix v5 (build 135.8). No game reinstall is required. Keep BOZFreeShop v2 installed.
 
-1. Close the game in Strata.
+1. Close the game in Strata. If controls v1 is installed, delete its BOZControls.dylib before importing this replacement; keep BOZFreeShop.dylib.
 2. Download BOZControls.dylib. In Strata's Tweaks screen, import it into the SAME folder that contains BOZFreeShop.dylib, assigned to Black Ops Zombies under its Tweak Folder setting.
 3. Open the game. At the main menu, tap Controls, then Enable touch preset.
-4. Start a NEW round. Native Touch mode supplies left-side movement and swipe aiming. Hold FIRE to shoot, hold ADS to aim, tap RELOAD to reload. No target-based auto-fire is added. Existing native manual gestures remain available.
-5. Controls > Move buttons allows dragging the three buttons; Controls > Finish moving buttons resumes input. Positions and sensitivity persist. Leave an uncovered area on the right for swipe aiming.
+4. Start a NEW round. Native Touch mode supplies left-side movement and swipe aiming. Hold FIRE to shoot, hold ADS to aim, tap RELOAD to reload, tap SWAP to switch guns. No target-based auto-fire is added. Existing native manual gestures remain available.
+5. Controls > Move buttons allows dragging the four buttons; Controls > Finish moving buttons resumes input. Positions and sensitivity persist. Leave an uncovered area on the right for swipe aiming.
 
 This is an initial touch-control adaptation inspired by Dead Trigger 2, not a recreation of its gameplay, weapons, AI or animations. FIRE does not currently support dragging to aim; use a separate finger on the uncovered aim area. Native aim assist is unchanged.
 

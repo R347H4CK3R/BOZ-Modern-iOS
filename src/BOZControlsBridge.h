@@ -8,9 +8,9 @@ static inline unsigned BOZControlsStateFlag(const char *name) {
     return 0;
 }
 static inline int BOZControlsStatesPlayable(unsigned flags) { return (flags&3)==1; }
-enum { BOZFire=1, BOZAim=2, BOZReload=4 };
+enum { BOZFire=1, BOZAim=2, BOZReload=4, BOZSwap=8 };
 static inline unsigned BOZControlsTarget(unsigned requested,int enabled,int active,int gameplay,int editing) {
-    return enabled && active && gameplay && !editing ? requested & 7u : 0;
+    return enabled && active && gameplay && !editing ? requested & 15u : 0;
 }
 // Marmalade's ARM64 import thunks: ADRP x16; LDR x17; ADD x16; BR x17.
 static inline uintptr_t BOZControlsThunkSlot(const uint32_t *w,uintptr_t pc) {

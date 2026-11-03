@@ -9,6 +9,9 @@ int main(int argc,char **argv) {
     assert(BOZControlsTarget(7,1,0,1,0)==0);
     assert(BOZControlsTarget(7,1,1,0,0)==0);
     assert(BOZControlsTarget(7,1,1,1,1)==0);
+    assert(BOZControlsTarget(8,1,1,1,0)==8); // manual swap survives masking
+    assert(BOZControlsTarget(8,1,1,0,0)==0); // no swap while paused
+    assert(BOZControlsTarget(16,1,1,1,0)==0); // unknown input rejected
     unsigned playing=BOZControlsStateFlag("GameStateIngame");
     unsigned paused=BOZControlsStateFlag("GameStatePaused");
     assert(BOZControlsStatesPlayable(playing));

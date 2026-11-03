@@ -5,7 +5,7 @@ from unicorn import Uc,UC_ARCH_ARM64,UC_MODE_ARM,UC_HOOK_CODE
 from unicorn.arm64_const import UC_ARM64_REG_X0,UC_ARM64_REG_X1,UC_ARM64_REG_X2,UC_ARM64_REG_X3,UC_ARM64_REG_X4,UC_ARM64_REG_PC,UC_ARM64_REG_LR
 
 b=Path(sys.argv[1]).read_bytes();base=0x10c800000;obj=0x200000000
-for name,offset,field,event_offset in [('fire',0x1ef2c4,0x79,0xc),('aim',0x1ef384,0x7c,0x14),('reload',0x1ef344,0x7b,0x10)]:
+for name,offset,field,event_offset in [('fire',0x1ef2c4,0x79,0xc),('aim',0x1ef384,0x7c,0x14),('reload',0x1ef344,0x7b,0x10),('swap',0x1ef314,0x7a,0x4)]:
     for down in (0,1):
         uc=Uc(UC_ARCH_ARM64,UC_MODE_ARM);uc.mem_map(base,0x400000);uc.mem_write(base,b[:0x400000]);uc.mem_map(obj,0x1000);uc.mem_map(base+0x645000,0x1000)
         uc.mem_write(base+0x645840+event_offset,struct.pack('<I',123))

@@ -147,6 +147,49 @@ static BOOL InstallYield(void) {
     return NO;
 }
 @end
+// Original vector icons; no game artwork or fixed display-size assumptions.
+@interface BOZCombatButton : UIButton @end
+@implementation BOZCombatButton
+- (CGRect)titleRectForContentRect:(CGRect)contentRect {
+    return CGRectMake(4,contentRect.size.height-19,contentRect.size.width-8,15);
+}
+- (void)setHighlighted:(BOOL)highlighted {
+    [super setHighlighted:highlighted];
+    self.backgroundColor=[UIColor.blackColor colorWithAlphaComponent:highlighted?0.72:0.30];
+    self.layer.borderColor=(highlighted?[UIColor colorWithRed:1 green:0.83 blue:0.24 alpha:1]:[UIColor.whiteColor colorWithAlphaComponent:0.8]).CGColor;
+    [self setNeedsDisplay];
+}
+- (void)drawRect:(CGRect)rect {
+    [super drawRect:rect];
+    CGFloat x=CGRectGetMidX(self.bounds),y=(self.bounds.size.height-16)/2;
+    UIColor *ink=self.highlighted?[UIColor colorWithRed:1 green:0.83 blue:0.24 alpha:1]:UIColor.whiteColor;
+    [ink setStroke];[ink setFill];
+    UIBezierPath *p=[UIBezierPath bezierPath];p.lineWidth=2;p.lineCapStyle=kCGLineCapRound;p.lineJoinStyle=kCGLineJoinRound;
+    if(self.tag==BOZFire || self.tag==BOZAim) {
+        if(self.tag==BOZFire) [p appendPath:[UIBezierPath bezierPathWithOvalInRect:CGRectMake(x-11,y-11,22,22)]];
+        else {
+            for(int a=0;a<4;a++) {
+                CGFloat sx=(a&1)?1:-1,sy=(a&2)?1:-1;
+                [p moveToPoint:CGPointMake(x+sx*6,y+sy*13)];[p addLineToPoint:CGPointMake(x+sx*13,y+sy*13)];[p addLineToPoint:CGPointMake(x+sx*13,y+sy*6)];
+            }
+        }
+        [p moveToPoint:CGPointMake(x-17,y)];[p addLineToPoint:CGPointMake(x-8,y)];
+        [p moveToPoint:CGPointMake(x+8,y)];[p addLineToPoint:CGPointMake(x+17,y)];
+        [p moveToPoint:CGPointMake(x,y-17)];[p addLineToPoint:CGPointMake(x,y-8)];
+        [p moveToPoint:CGPointMake(x,y+8)];[p addLineToPoint:CGPointMake(x,y+17)];
+        [[UIBezierPath bezierPathWithOvalInRect:CGRectMake(x-2,y-2,4,4)] fill];
+    } else if(self.tag==BOZReload) {
+        [p addArcWithCenter:CGPointMake(x,y) radius:12 startAngle:-0.65 endAngle:4.5 clockwise:YES];
+        [p moveToPoint:CGPointMake(x-8,y-13)];[p addLineToPoint:CGPointMake(x-2,y-13)];[p addLineToPoint:CGPointMake(x-2,y-7)];
+    } else {
+        [p moveToPoint:CGPointMake(x-22,y-5)];[p addLineToPoint:CGPointMake(x+22,y-5)];
+        [p addLineToPoint:CGPointMake(x+16,y-11)];[p moveToPoint:CGPointMake(x+22,y-5)];[p addLineToPoint:CGPointMake(x+16,y+1)];
+        [p moveToPoint:CGPointMake(x+22,y+7)];[p addLineToPoint:CGPointMake(x-22,y+7)];
+        [p addLineToPoint:CGPointMake(x-16,y+1)];[p moveToPoint:CGPointMake(x-22,y+7)];[p addLineToPoint:CGPointMake(x-16,y+13)];
+    }
+    [p stroke];
+}
+@end
 @interface BOZControls : NSObject
 + (void)menu;
 + (void)down:(UIButton *)button;
@@ -158,16 +201,16 @@ static void Layout(void) {
     UIWindow *window=Window();if(!window||!Overlay) return;
     Overlay.frame=window.bounds;CGRect safe=SafeRect();
     MenuButton.frame=CGRectMake(safe.origin.x+130,safe.origin.y+12,100,42);
-    double defaults[4][2]={{0.90,0.71},{0.78,0.82},{0.66,0.90},{0.66,0.68}};
+    double defaults[4][2]={{0.88,0.57},{0.91,0.25},{0.78,0.83},{0.52,0.88}};
     for(NSUInteger i=0;i<Buttons.count;i++) {
         UIButton *button=Buttons[i];double x=defaults[i][0],y=defaults[i][1];
-        NSArray *saved=[NSUserDefaults.standardUserDefaults arrayForKey:[Pref stringByAppendingFormat:@"Position.%lu",(unsigned long)i]];
+        NSArray *saved=[NSUserDefaults.standardUserDefaults arrayForKey:[Pref stringByAppendingFormat:@"CODLayout.Position.%lu",(unsigned long)i]];
         if(saved.count==2 && [saved[0] isKindOfClass:NSNumber.class] && [saved[1] isKindOfClass:NSNumber.class]) { x=[saved[0] doubleValue];y=[saved[1] doubleValue]; }
         if(!isfinite(x)||!isfinite(y)||x<0||x>1||y<0||y>1) { x=defaults[i][0];y=defaults[i][1]; }
-        CGFloat diameter=i==0?84:62;
-        button.bounds=CGRectMake(0,0,diameter,diameter);
-        button.center=CGPointMake(fmax(CGRectGetMinX(safe)+diameter/2,fmin(CGRectGetMaxX(safe)-diameter/2,safe.origin.x+x*safe.size.width)),fmax(CGRectGetMinY(safe)+diameter/2,fmin(CGRectGetMaxY(safe)-diameter/2,safe.origin.y+y*safe.size.height)));
-        button.layer.cornerRadius=diameter/2;
+        CGFloat width=i==3?120:(i==0?88:64),height=i==3?54:width;
+        button.bounds=CGRectMake(0,0,width,height);
+        button.center=CGPointMake(fmax(CGRectGetMinX(safe)+width/2,fmin(CGRectGetMaxX(safe)-width/2,safe.origin.x+x*safe.size.width)),fmax(CGRectGetMinY(safe)+height/2,fmin(CGRectGetMaxY(safe)-height/2,safe.origin.y+y*safe.size.height)));
+        button.layer.cornerRadius=i==3?7:width/2;
     }
 }
 @implementation BOZControls
@@ -176,20 +219,20 @@ static void Layout(void) {
 + (void)pan:(UIPanGestureRecognizer *)gesture {
     if(!atomic_load(&Editing)) return;
     UIButton *button=(UIButton *)gesture.view;CGPoint movement=[gesture translationInView:Overlay];
-    CGRect safe=SafeRect();CGFloat radius=button.bounds.size.width/2;
-    button.center=CGPointMake(fmax(CGRectGetMinX(safe)+radius,fmin(CGRectGetMaxX(safe)-radius,button.center.x+movement.x)),fmax(CGRectGetMinY(safe)+radius,fmin(CGRectGetMaxY(safe)-radius,button.center.y+movement.y)));
+    CGRect safe=SafeRect();CGFloat radius=button.bounds.size.width/2,verticalRadius=button.bounds.size.height/2;
+    button.center=CGPointMake(fmax(CGRectGetMinX(safe)+radius,fmin(CGRectGetMaxX(safe)-radius,button.center.x+movement.x)),fmax(CGRectGetMinY(safe)+verticalRadius,fmin(CGRectGetMaxY(safe)-verticalRadius,button.center.y+movement.y)));
     [gesture setTranslation:CGPointZero inView:Overlay];
     if(gesture.state==UIGestureRecognizerStateEnded || gesture.state==UIGestureRecognizerStateCancelled) {
         NSUInteger index=[Buttons indexOfObject:button];
-        [NSUserDefaults.standardUserDefaults setObject:@[@((button.center.x-safe.origin.x)/safe.size.width),@((button.center.y-safe.origin.y)/safe.size.height)] forKey:[Pref stringByAppendingFormat:@"Position.%lu",(unsigned long)index]];
+        [NSUserDefaults.standardUserDefaults setObject:@[@((button.center.x-safe.origin.x)/safe.size.width),@((button.center.y-safe.origin.y)/safe.size.height)] forKey:[Pref stringByAppendingFormat:@"CODLayout.Position.%lu",(unsigned long)index]];
     }
 }
 + (void)menu {
     atomic_store(&Requested,0);
     UIViewController *presenter=Presenter();if(!presenter||[presenter isKindOfClass:UIAlertController.class]) return;
     NSString *status=atomic_load(&YieldInstalled)&&atomic_load(&InputReady)?@"Input bridge ready":@"Waiting for the game input bridge";
-    UIAlertController *menu=[UIAlertController alertControllerWithTitle:@"Touch Controls" message:[status stringByAppendingString:@"\nDT2-style touch preset with manual fire. Enable at the main menu, then start a new round for the native swipe-aim layout. FIRE and ADS are hold buttons. No target-based auto-fire is added."] preferredStyle:UIAlertControllerStyleAlert];
-    [menu addAction:[UIAlertAction actionWithTitle:atomic_load(&Enabled)?@"Hide combat buttons":@"Enable touch preset" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+    UIAlertController *menu=[UIAlertController alertControllerWithTitle:@"Combat HUD" message:[status stringByAppendingString:@"\nCOD Mobile-inspired HUD with manual fire. Enable at the main menu, then start a new round for the native swipe-aim layout. FIRE and ADS are hold buttons. No target-based auto-fire is added."] preferredStyle:UIAlertControllerStyleAlert];
+    [menu addAction:[UIAlertAction actionWithTitle:atomic_load(&Enabled)?@"Hide combat buttons":@"Enable COD-style HUD" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         BOOL on=!atomic_load(&Enabled);atomic_store(&Enabled,on);atomic_store(&Requested,0);
         [NSUserDefaults.standardUserDefaults setBool:on forKey:[Pref stringByAppendingString:@"Enabled"]];
         if(on) atomic_store(&ProfileDirty,1);
@@ -203,7 +246,7 @@ static void Layout(void) {
         Sensitivity=value.floatValue;[NSUserDefaults.standardUserDefaults setFloat:Sensitivity forKey:[Pref stringByAppendingString:@"Sensitivity"]];atomic_store(&ProfileDirty,1);
     }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"Reset button positions" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        for(int i=0;i<4;i++) [NSUserDefaults.standardUserDefaults removeObjectForKey:[Pref stringByAppendingFormat:@"Position.%d",i]];
+        for(int i=0;i<4;i++) [NSUserDefaults.standardUserDefaults removeObjectForKey:[Pref stringByAppendingFormat:@"CODLayout.Position.%d",i]];
         Layout();
     }]];
     [menu addAction:[UIAlertAction actionWithTitle:@"Close" style:UIAlertActionStyleCancel handler:nil]];
@@ -229,9 +272,9 @@ static void Install(void) {
         [MenuButton addTarget:BOZControls.class action:@selector(menu) forControlEvents:UIControlEventTouchUpInside];[Overlay addSubview:MenuButton];
         NSArray *titles=@[@"FIRE",@"ADS",@"RELOAD",@"SWAP"];int bits[]={BOZFire,BOZAim,BOZReload,BOZSwap};
         for(int i=0;i<4;i++) {
-            UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem];button.tag=bits[i];[button setTitle:titles[i] forState:UIControlStateNormal];
-            button.titleLabel.font=[UIFont boldSystemFontOfSize:i==0?19:12];button.backgroundColor=[UIColor.blackColor colorWithAlphaComponent:0.45];
-            [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];button.layer.borderWidth=2;button.layer.borderColor=[UIColor.whiteColor colorWithAlphaComponent:0.75].CGColor;
+            UIButton *button=[[BOZCombatButton alloc] initWithFrame:CGRectZero];button.tag=bits[i];button.contentMode=UIViewContentModeRedraw;[button setTitle:titles[i] forState:UIControlStateNormal];
+            button.titleLabel.font=[UIFont boldSystemFontOfSize:10];button.backgroundColor=[UIColor.blackColor colorWithAlphaComponent:0.30];
+            [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];button.layer.borderWidth=1.5;button.layer.borderColor=[UIColor.whiteColor colorWithAlphaComponent:0.75].CGColor;
             [button addTarget:BOZControls.class action:@selector(down:) forControlEvents:UIControlEventTouchDown|UIControlEventTouchDragEnter];
             [button addTarget:BOZControls.class action:@selector(up:) forControlEvents:UIControlEventTouchUpInside|UIControlEventTouchUpOutside|UIControlEventTouchCancel|UIControlEventTouchDragExit];
             UIPanGestureRecognizer *pan=[[UIPanGestureRecognizer alloc] initWithTarget:BOZControls.class action:@selector(pan:)];pan.enabled=NO;[button addGestureRecognizer:pan];

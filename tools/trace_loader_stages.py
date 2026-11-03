@@ -24,7 +24,7 @@ CALLS = [
     (0x64324, 0x86018, 'physical-memory-kb'),
     (0x643ac, 0x84cfc, 'device-init-late'),
     (0x6440c, 0x62b1c, 'embedded-executable'),
-    (0x64424, 0x6a92c, 'embedded-loader'),
+    (0x64424, 0x6a92c, 'code-hash'),
     (0x66fc4, 0x64a7c, 'get-executable'),
     (0x66fe4, 0x63e48, 'push-executable'),
     (0x66ff4, 0x64620, 'execute-loop'),

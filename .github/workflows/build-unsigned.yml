@@ -9,6 +9,8 @@ on:
       - 'tools/check_loader_compatibility.py'
       - 'tools/normalize_marmalade.py'
       - 'tools/trace_loader_stages.py'
+      - 'tools/fix_marmalade_scanner.py'
+      - 'tests/test_marmalade_scanner.py'
       - 'src/BOZDiagnostics.m'
       - 'src/BOZStartupTrace.m'
       - 'src/BOZEngineTrace.m'
@@ -57,9 +59,10 @@ jobs:
           unzip -q repair/boz-v1.3.5-mp.ipa -d verify
           cp src/FISHHOOK-LICENSE verify/Payload/blackops.app/ThirdParty-Fishhook.txt
           python3 tools/normalize_marmalade.py verify/Payload/blackops.app/blackops
+          python3 tools/fix_marmalade_scanner.py verify/Payload/blackops.app/blackops
           python3 tools/trace_loader_stages.py verify/Payload/blackops.app/blackops
-          plutil -replace CFBundleVersion -string 135.7 verify/Payload/blackops.app/Info.plist
-          plutil -replace CFBundleDisplayName -string 'COD:BOZ Trace v4' verify/Payload/blackops.app/Info.plist
+          plutil -replace CFBundleVersion -string 135.8 verify/Payload/blackops.app/Info.plist
+          plutil -replace CFBundleDisplayName -string 'COD:BOZ Loader Fix v5' verify/Payload/blackops.app/Info.plist
           find verify/Payload -type f | while IFS= read -r f; do
             if file "$f" | grep -q 'Mach-O'; then
               codesign --remove-signature "$f" || exit 1
@@ -73,6 +76,9 @@ jobs:
           test -f verify/Payload/blackops.app/Frameworks/BOZFullscreenFix.dylib
           python3 tools/check_loader_compatibility.py verify/Payload/blackops.app/blackops
           plutil -lint verify/Payload/blackops.app/Info.plist
+          python3 -m venv "$RUNNER_TEMP/boz-tests"
+          "$RUNNER_TEMP/boz-tests/bin/python" -m pip install unicorn==2.1.4
+          "$RUNNER_TEMP/boz-tests/bin/python" tests/test_marmalade_scanner.py verify/Payload/blackops.app/blackops
           (cd verify && zip -qry -X ../BOZ-Modern-iOS-unsigned.ipa Payload)
           unzip -t BOZ-Modern-iOS-unsigned.ipa
           shasum -a 256 BOZ-Modern-iOS-unsigned.ipa > BOZ-Modern-iOS-unsigned.sha256

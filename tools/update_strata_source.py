@@ -6,7 +6,7 @@ def gh(*args):
  p=subprocess.run(['gh',*args],capture_output=True,text=True)
  if p.returncode: raise RuntimeError(p.stderr)
  return p.stdout
-release=json.loads(gh('release','view','engine-trace-v4','--repo',repo,'--json','assets,url'))
+release=json.loads(gh('release','view','loader-fix-v5','--repo',repo,'--json','assets,url'))
 asset=next(a for a in release['assets'] if a['name'].endswith('.ipa'))
 ipa=Path('output/BOZ-Modern-iOS-unsigned.ipa')
 with zipfile.ZipFile(ipa) as z:

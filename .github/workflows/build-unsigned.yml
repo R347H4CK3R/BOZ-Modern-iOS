@@ -7,6 +7,7 @@ on:
       - 'tools/fix_container_image.py'
       - 'tools/integrate_diagnostics.py'
       - 'tools/check_loader_compatibility.py'
+      - 'tools/normalize_marmalade.py'
       - 'src/BOZDiagnostics.m'
 concurrency:
   group: boz-unsigned-build
@@ -49,6 +50,9 @@ jobs:
         run: |
           mkdir verify
           unzip -q repair/boz-v1.3.5-mp.ipa -d verify
+          python3 tools/normalize_marmalade.py verify/Payload/blackops.app/blackops
+          plutil -replace CFBundleVersion -string 135.4 verify/Payload/blackops.app/Info.plist
+          plutil -replace CFBundleDisplayName -string 'COD:BOZ Layout Fix' verify/Payload/blackops.app/Info.plist
           find verify/Payload -type f | while IFS= read -r f; do
             if file "$f" | grep -q 'Mach-O'; then
               codesign --remove-signature "$f" || exit 1

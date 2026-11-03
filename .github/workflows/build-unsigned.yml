@@ -5,6 +5,11 @@ on:
     paths:
       - '.github/workflows/build-unsigned.yml'
       - 'tools/fix_container_image.py'
+      - 'tools/integrate_diagnostics.py'
+      - 'src/BOZDiagnostics.m'
+concurrency:
+  group: boz-unsigned-build
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -35,6 +40,8 @@ jobs:
           echo "$RUNNER_TEMP/ipsw-bin" >> "$GITHUB_PATH"
       - name: Fix guest image lookup for containers
         run: python3 tools/fix_container_image.py
+      - name: Integrate persistent diagnostics
+        run: python3 tools/integrate_diagnostics.py
       - name: Build compatibility repair
         run: bash repair/build-fixed-ipa.sh "$PWD/boz-v1.3.5.ipa"
       - name: Remove embedded signatures and validate package
@@ -63,3 +70,8 @@ jobs:
             BOZ-Modern-iOS-unsigned.ipa
             BOZ-Modern-iOS-unsigned.sha256
           retention-days: 14
+      - name: Record verified build metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo 'verified-run=${{ github.run_id }}' >> "$GITHUB_STEP_SUMMARY"

@@ -9,6 +9,12 @@ int main(int argc,char **argv) {
     assert(BOZControlsTarget(7,1,0,1,0)==0);
     assert(BOZControlsTarget(7,1,1,0,0)==0);
     assert(BOZControlsTarget(7,1,1,1,1)==0);
+    unsigned playing=BOZControlsStateFlag("GameStateIngame");
+    unsigned paused=BOZControlsStateFlag("GameStatePaused");
+    assert(BOZControlsStatesPlayable(playing));
+    assert(!BOZControlsStatesPlayable(playing|paused));
+    assert(!BOZControlsStatesPlayable(BOZControlsStateFlag("GameStateFrontEnd")));
+    assert(BOZControlsTarget(7,1,1,BOZControlsStatesPlayable(playing|paused),0)==0);
     uint32_t words[]={0x90000010,0xf941de11,0x910ee210,0xd61f0220};
     // offset 0x3b8 in both LDR (scaled) and ADD (unscaled).
     words[1]=0xf9400211u | ((0x3b8u/8)<<10);

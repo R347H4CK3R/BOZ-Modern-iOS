@@ -61,23 +61,34 @@ static BOOL Manager(uintptr_t *manager) {
 }
 static BOOL InGame(void) {
     uintptr_t client=0,player=0,vtable=0;
-    return Read(B+0x637218,&client,8) && client && Read(client+0x1f0,&player,8) && player && Read(player,&vtable,8) && vtable;
+    if(!Read(B+0x637218,&client,8) || !client || !Read(client+0x1f0,&player,8) || !player || !Read(player,&vtable,8) || !vtable) return NO;
+    // CIwGameStateManager: the native activate/deactivate routines maintain
+    // an array of state-name pointers at +0xa0, with its count at +0xa8.
+    uintptr_t states=0,names=0;uint32_t count=0;unsigned flags=0;
+    if(!Read(B+0x637230,&states,8) || !states || !Read(states+0xa0,&names,8) || !Read(states+0xa8,&count,4) || !names || count>64) return NO;
+    for(uint32_t i=0;i<count;i++) {
+        uintptr_t name=0;char value[32]={0};
+        if(!Read(names+i*8,&name,8) || !name || !Read(name,value,sizeof(value)-1)) return NO;
+        flags|=BOZControlsStateFlag(value);
+    }
+    return BOZControlsStatesPlayable(flags);
 }
-static void ApplyProfile(void) {
+static BOOL ApplyProfile(void) {
     uintptr_t config=0;int16_t mode=-1;float xy[2]={0};
-    if(!Read(B+0x637228,&config,8) || !config || !Read(config+0x12e,&mode,2) || mode<0 || mode>2 || !Read(config+0x124,xy,8) || !isfinite(xy[0]) || !isfinite(xy[1]) || xy[0]<0 || xy[0]>1 || xy[1]<0 || xy[1]>1) return;
+    if(!Read(B+0x637228,&config,8) || !config || !Read(config+0x12e,&mode,2) || mode<0 || mode>2 || !Read(config+0x124,xy,8) || !isfinite(xy[0]) || !isfinite(xy[1]) || xy[0]<0 || xy[0]>1 || xy[1]<0 || xy[1]>1) return NO;
     int16_t touch=1;
     float sensitivity=atomic_load(&Sensitivity);
     float values[2]={sensitivity,sensitivity};
     BOOL okay=Write(config+0x12e,&touch,2) && Write(config+0x124,values,sizeof(values));
-    if(okay) { atomic_store(&ProfileDirty,0);Log([NSString stringWithFormat:@"touch-profile applied manual-fire=1 sensitivity=%.2f next-round-layout=1",(double)sensitivity]); }
+    if(okay) { Log([NSString stringWithFormat:@"touch-profile applied manual-fire=1 sensitivity=%.2f next-round-layout=1",(double)sensitivity]); }
+    return okay;
 }
 static void TickControls(void) {
     uintptr_t manager=0;
     BOOL ready=Manager(&manager);
     atomic_store(&InputReady,ready);
     BOOL gameplay=ready&&InGame();atomic_store(&Gameplay,gameplay);
-    if(ready && atomic_load(&Enabled) && atomic_load(&ProfileDirty)) ApplyProfile();
+    if(ready && atomic_load(&Enabled) && atomic_exchange(&ProfileDirty,0) && !ApplyProfile()) atomic_store(&ProfileDirty,1);
     if(!ready) { Sent=0;LastManager=0;return; }
     if(manager!=LastManager) { Sent=0;LastManager=manager;Log(@"input-manager ready"); }
     unsigned target=BOZControlsTarget(atomic_load(&Requested),atomic_load(&Enabled),atomic_load(&Active),gameplay,atomic_load(&Editing));

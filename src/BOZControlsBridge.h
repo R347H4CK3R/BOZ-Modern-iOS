@@ -1,6 +1,13 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
+static inline unsigned BOZControlsStateFlag(const char *name) {
+    if(!strcmp(name,"GameStateIngame")) return 1;
+    if(!strcmp(name,"GameStatePaused")) return 2;
+    return 0;
+}
+static inline int BOZControlsStatesPlayable(unsigned flags) { return (flags&3)==1; }
 enum { BOZFire=1, BOZAim=2, BOZReload=4 };
 static inline unsigned BOZControlsTarget(unsigned requested,int enabled,int active,int gameplay,int editing) {
     return enabled && active && gameplay && !editing ? requested & 7u : 0;

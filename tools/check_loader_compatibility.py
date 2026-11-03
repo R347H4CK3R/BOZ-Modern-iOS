@@ -8,7 +8,7 @@ sdk=None
 for _ in range(n):
     command,size=struct.unpack_from("<II",b,p)
     assert size>=8 and p+size<=len(b)
-    if command==0x24:
+    if command==0x25:
         minimum,sdk=struct.unpack_from("<II",b,p+8)
     elif command==0x32:
         _,minimum,sdk=struct.unpack_from("<III",b,p+8)

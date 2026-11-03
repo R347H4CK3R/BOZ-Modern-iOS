@@ -37,11 +37,14 @@ static void ShopLog(NSString *message) {
 }
 static UIWindow *GameWindow(void) {
     for(UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if([scene isKindOfClass:UIWindowScene.class]) {
+        if([scene isKindOfClass:UIWindowScene.class] && scene.activationState==UISceneActivationStateForegroundActive) {
             for(UIWindow *window in ((UIWindowScene *)scene).windows)
-                if(window.isKeyWindow && !window.hidden && window.windowLevel==UIWindowLevelNormal) return window;
+                if(window.isKeyWindow && !window.hidden) return window;
         }
     }
+    // Marmalade can create a legacy UIWindow outside the host's scene list.
+    for(UIWindow *window in UIApplication.sharedApplication.windows)
+        if(window.isKeyWindow && !window.hidden) return window;
     return nil;
 }
 static void Alert(NSString *title,NSString *text) {

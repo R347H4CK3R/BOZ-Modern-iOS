@@ -1,12 +1,13 @@
 from pathlib import Path
 import shutil
 shutil.copyfile("src/BOZDiagnostics.m", "repair/src/BOZDiagnostics.m")
+shutil.copyfile("src/BOZStartupTrace.m", "repair/src/BOZStartupTrace.m")
 p=Path("repair/build-fixed-ipa.sh")
 s=p.read_text()
 assert s.count('-framework CoreGraphics -framework Foundation -framework UIKit') == 1
 s=s.replace('-framework CoreGraphics -framework Foundation -framework UIKit', '-framework CoreGraphics -framework Foundation -framework UIKit -framework Security')
 assert s.count('"$fullscreen_fix_source"') == 1
-s=s.replace('"$fullscreen_fix_source"', '"$fullscreen_fix_source" "$script_dir/src/BOZDiagnostics.m"')
+s=s.replace('"$fullscreen_fix_source"', '"$fullscreen_fix_source" "$script_dir/src/BOZDiagnostics.m" "$script_dir/src/BOZStartupTrace.m"')
 
 # Legacy Marmalade segments are intentionally out of VM order. LiveContainer
 # converts the guest to MH_DYLIB; linking to iOS 13 activates fall-2019 dyld

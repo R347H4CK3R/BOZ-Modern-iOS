@@ -1,0 +1,55 @@
+name: Publish diagnostic IPA
+on:
+  workflow_run:
+    workflows: ['Build unsigned BOZ']
+    types: [completed]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_ID: ${{ github.event.workflow_run.id }}
+      BUILD_RESULT: ${{ github.event.workflow_run.conclusion }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Download verified diagnostic build
+        if: env.BUILD_RESULT == 'success'
+        run: gh run download "$BUILD_ID" --repo "$REPO" --name BOZ-Modern-iOS-unsigned --dir output
+      - name: Publish direct unsigned IPA
+        if: env.BUILD_RESULT == 'success'
+        run: |
+          cd output
+          sha256sum --check BOZ-Modern-iOS-unsigned.sha256
+          if gh release view diagnostics-v1.3.5 --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload diagnostics-v1.3.5 BOZ-Modern-iOS-unsigned.ipa BOZ-Modern-iOS-unsigned.sha256 --clobber --repo "$REPO"
+          else
+            gh release create diagnostics-v1.3.5 BOZ-Modern-iOS-unsigned.ipa BOZ-Modern-iOS-unsigned.sha256 --repo "$REPO" --title 'BOZ unsigned — container fix and diagnostics' --notes 'Guest-image offset fix; persistent local diagnostics; optional private GitHub issue reporting using a user-provided fine-grained token stored in Keychain. Package checks passed. Physical-device launch, gameplay and report uploads still require testing.' --prerelease
+          fi
+      - name: Record build and publication result
+        if: always()
+        env:
+          PUBLISH_RESULT: ${{ job.status }}
+        run: |
+          python3 - <<'PY'
+          import os,json,subprocess,base64
+          def gh(*args):
+              p=subprocess.run(['gh',*args],capture_output=True,text=True)
+              return p.returncode,p.stdout
+          repo=os.environ['REPO']; run=os.environ['BUILD_ID']
+          report={'run_id':run,'build_result':os.environ['BUILD_RESULT'],'publish_result':os.environ['PUBLISH_RESULT']}
+          if report['build_result']=='success':
+              code,data=gh('release','view','diagnostics-v1.3.5','--repo',repo,'--json','assets,url')
+              if code==0: report['release']=json.loads(data)
+          else:
+              code,data=gh('run','view',run,'--repo',repo,'--log-failed')
+              report['failure_log']=data[-14000:]
+          endpoint='repos/'+repo+'/contents/diagnostic-build-status.json'
+          code,old=gh('api',endpoint)
+          request={'message':'Record diagnostic build '+run,'content':base64.b64encode(json.dumps(report).encode()).decode()}
+          if code==0: request['sha']=json.loads(old)['sha']
+          open('request.json','w').write(json.dumps(request))
+          subprocess.run(['gh','api','--method','PUT',endpoint,'--input','request.json'],check=True)
+          PY

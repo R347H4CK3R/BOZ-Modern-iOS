@@ -12,6 +12,15 @@ int main(int argc,char **argv) {
     assert(BOZControlsTarget(8,1,1,1,0)==8); // manual swap survives masking
     assert(BOZControlsTarget(8,1,1,0,0)==0); // no swap while paused
     assert(BOZControlsTarget(16,1,1,1,0)==0); // unknown input rejected
+    // SWAP tap ends before the next sample, but its queued press survives.
+    unsigned queued=BOZSwap;
+    unsigned pulse=BOZControlsQueuedTarget(0,queued,0,1);
+    assert(pulse==BOZSwap);
+    assert(BOZControlsQueuedTarget(0,0,pulse,1)==0); // release next tick
+    assert(BOZControlsQueuedTarget(0,BOZSwap,pulse,1)==0); // separate presses
+    assert(BOZControlsQueuedTarget(0,BOZSwap,0,0)==0); // pause discards taps
+    assert(BOZControlsQueuedTarget(0,BOZReload,0,1)==BOZReload);
+    assert(BOZControlsQueuedTarget(BOZFire|BOZAim,BOZSwap,0,1)==11);
     unsigned playing=BOZControlsStateFlag("GameStateIngame");
     unsigned paused=BOZControlsStateFlag("GameStatePaused");
     assert(BOZControlsStatesPlayable(playing));

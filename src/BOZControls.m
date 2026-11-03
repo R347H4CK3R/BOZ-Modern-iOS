@@ -13,7 +13,7 @@
 static uintptr_t B;
 static IMP OriginalShow;
 static _Atomic(uintptr_t) EngineThread;
-static _Atomic(unsigned) Requested;
+static _Atomic(unsigned) Requested,PendingTaps;
 static _Atomic(int) Enabled,Active,Editing,InputReady,Gameplay,ProfileDirty,YieldInstalled;
 static unsigned Sent;
 static uintptr_t LastManager;
@@ -91,7 +91,10 @@ static void TickControls(void) {
     if(ready && atomic_load(&Enabled) && atomic_exchange(&ProfileDirty,0) && !ApplyProfile()) atomic_store(&ProfileDirty,1);
     if(!ready) { Sent=0;LastManager=0;return; }
     if(manager!=LastManager) { Sent=0;LastManager=manager;Log(@"input-manager ready"); }
-    unsigned target=BOZControlsTarget(atomic_load(&Requested),atomic_load(&Enabled),atomic_load(&Active),gameplay,atomic_load(&Editing));
+    BOOL allowed=BOZControlsTarget(15,atomic_load(&Enabled),atomic_load(&Active),gameplay,atomic_load(&Editing))!=0;
+    unsigned pending=atomic_exchange(&PendingTaps,0);
+    unsigned target=BOZControlsQueuedTarget(atomic_load(&Requested),pending,Sent,allowed);
+    if(allowed) atomic_fetch_or(&PendingTaps,pending & Sent & (BOZReload|BOZSwap));
     unsigned masks[]={BOZFire,BOZAim,BOZReload,BOZSwap};
     uintptr_t functions[]={0x1ef2c4,0x1ef384,0x1ef344,0x1ef314};
     unsigned fields[]={0x79,0x7c,0x7b,0x7a};
@@ -214,7 +217,11 @@ static void Layout(void) {
     }
 }
 @implementation BOZControls
-+ (void)down:(UIButton *)button { if(!atomic_load(&Editing)) atomic_fetch_or(&Requested,(unsigned)button.tag); }
++ (void)down:(UIButton *)button {
+    if(atomic_load(&Editing)) return;
+    unsigned bit=(unsigned)button.tag,previous=atomic_fetch_or(&Requested,bit);
+    if(!(previous&bit) && (bit&(BOZReload|BOZSwap))) atomic_fetch_or(&PendingTaps,bit);
+}
 + (void)up:(UIButton *)button { atomic_fetch_and(&Requested,~(unsigned)button.tag); }
 + (void)pan:(UIPanGestureRecognizer *)gesture {
     if(!atomic_load(&Editing)) return;
@@ -228,18 +235,18 @@ static void Layout(void) {
     }
 }
 + (void)menu {
-    atomic_store(&Requested,0);
+    atomic_store(&Requested,0);atomic_store(&PendingTaps,0);
     UIViewController *presenter=Presenter();if(!presenter||[presenter isKindOfClass:UIAlertController.class]) return;
     NSString *status=atomic_load(&YieldInstalled)&&atomic_load(&InputReady)?@"Input bridge ready":@"Waiting for the game input bridge";
     UIAlertController *menu=[UIAlertController alertControllerWithTitle:@"Combat HUD" message:[status stringByAppendingString:@"\nCOD Mobile-inspired HUD with manual fire. Enable at the main menu, then start a new round for the native swipe-aim layout. FIRE and ADS are hold buttons. No target-based auto-fire is added."] preferredStyle:UIAlertControllerStyleAlert];
     [menu addAction:[UIAlertAction actionWithTitle:atomic_load(&Enabled)?@"Hide combat buttons":@"Enable COD-style HUD" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        BOOL on=!atomic_load(&Enabled);atomic_store(&Enabled,on);atomic_store(&Requested,0);
+        BOOL on=!atomic_load(&Enabled);atomic_store(&Enabled,on);atomic_store(&Requested,0);atomic_store(&PendingTaps,0);
         [NSUserDefaults.standardUserDefaults setBool:on forKey:[Pref stringByAppendingString:@"Enabled"]];
         if(on) atomic_store(&ProfileDirty,1);
         Log([NSString stringWithFormat:@"enabled=%d",on]);
     }]];
     [menu addAction:[UIAlertAction actionWithTitle:atomic_load(&Editing)?@"Finish moving buttons":@"Move buttons" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-        BOOL edit=!atomic_load(&Editing);atomic_store(&Editing,edit);atomic_store(&Requested,0);
+        BOOL edit=!atomic_load(&Editing);atomic_store(&Editing,edit);atomic_store(&Requested,0);atomic_store(&PendingTaps,0);
         for(UIButton *button in Buttons) for(UIGestureRecognizer *recognizer in button.gestureRecognizers) recognizer.enabled=edit;
     }]];
     for(NSNumber *value in @[@0.35,@0.50,@0.65]) [menu addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"Aim sensitivity: %.2f",value.floatValue] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
@@ -292,7 +299,7 @@ __attribute__((constructor)) static void Start(void) {
         atomic_store(&Enabled,[NSUserDefaults.standardUserDefaults boolForKey:[Pref stringByAppendingString:@"Enabled"]]);
         float saved=[NSUserDefaults.standardUserDefaults floatForKey:[Pref stringByAppendingString:@"Sensitivity"]];if(isfinite(saved)&&saved>=0.1&&saved<=1) Sensitivity=saved;
         atomic_store(&ProfileDirty,1);atomic_store(&Active,UIApplication.sharedApplication.applicationState==UIApplicationStateActive);
-        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ atomic_store(&Active,0);atomic_store(&Requested,0); }];
+        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ atomic_store(&Active,0);atomic_store(&Requested,0);atomic_store(&PendingTaps,0); }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ atomic_store(&Active,1); }];
         Install();[NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *timer){Install();}];
     });

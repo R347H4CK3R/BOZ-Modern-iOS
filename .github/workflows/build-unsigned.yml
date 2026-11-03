@@ -6,6 +6,7 @@ on:
       - '.github/workflows/build-unsigned.yml'
       - 'tools/fix_container_image.py'
       - 'tools/integrate_diagnostics.py'
+      - 'tools/check_loader_compatibility.py'
       - 'src/BOZDiagnostics.m'
 concurrency:
   group: boz-unsigned-build

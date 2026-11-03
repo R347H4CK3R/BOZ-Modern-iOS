@@ -59,6 +59,7 @@ jobs:
           test "$(lipo -archs verify/Payload/blackops.app/blackops)" = arm64
           test -f verify/Payload/blackops.app/Frameworks/libstdc++.6.dylib
           test -f verify/Payload/blackops.app/Frameworks/BOZFullscreenFix.dylib
+          python3 tools/check_loader_compatibility.py verify/Payload/blackops.app/blackops
           plutil -lint verify/Payload/blackops.app/Info.plist
           (cd verify && zip -qry -X ../BOZ-Modern-iOS-unsigned.ipa Payload)
           unzip -t BOZ-Modern-iOS-unsigned.ipa

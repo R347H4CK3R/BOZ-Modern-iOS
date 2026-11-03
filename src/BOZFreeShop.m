@@ -3,7 +3,6 @@
 #import <objc/runtime.h>
 #import <dlfcn.h>
 #import <mach/mach.h>
-#import <mach/mach_vm.h>
 #import <stdatomic.h>
 #import <stdint.h>
 #import <string.h>
@@ -16,9 +15,10 @@ static UIButton *gButton;
 static unsigned gFrames;
 
 static BOOL ReadMemory(uintptr_t address, void *out, size_t size) {
-    mach_vm_size_t read=0;
-    return mach_vm_read_overwrite(mach_task_self(), address, size,
-        (mach_vm_address_t)out, &read)==KERN_SUCCESS && read==size;
+    _Static_assert(sizeof(vm_address_t)>=sizeof(uintptr_t),"ARM64 VM addresses required");
+    vm_size_t read=0;
+    return vm_read_overwrite(mach_task_self(), (vm_address_t)address, size,
+        (vm_address_t)out, &read)==KERN_SUCCESS && read==size;
 }
 static NSString *Documents(void) {
     return NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject;
@@ -105,7 +105,7 @@ static void ShopFrame(id self,SEL selector) {
             if(valid && status==0) message=[NSString stringWithFormat:@"Added %d credits.\nBalance: %d\n\nThe game reported a successful save. Restart the game to confirm the balance persists.",amount,after];
             else message=@"The credit/save check did not complete successfully. See BOZDiagnostics/shop.log before trying again.";
         }
-        dispatch_async(dispatch_get_main_queue(),^{ Alert(@"Free Shop",message); });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.5*NSEC_PER_SEC)),dispatch_get_main_queue(),^{ Alert(@"Free Shop",message); });
     }
 }
 

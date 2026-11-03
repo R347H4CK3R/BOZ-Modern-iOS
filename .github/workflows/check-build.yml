@@ -1,0 +1,31 @@
+name: Check build status
+on:
+  push:
+    paths: ['.github/workflows/check-build.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import os,subprocess,json,base64
+          repo=os.environ['REPO']
+          def api(path): return subprocess.check_output(['gh','api',path],text=True)
+          runs=json.loads(api('repos/'+repo+'/actions/runs?per_page=12'))['workflow_runs']
+          builds=[{k:r[k] for k in ['id','name','head_sha','status','conclusion','html_url']} for r in runs if r['name']=='Build unsigned BOZ']
+          for r in builds[:3]:
+              r['jobs']=json.loads(api('repos/'+repo+'/actions/runs/'+str(r['id'])+'/jobs'))['jobs']
+          req={'message':'Record current builds','content':base64.b64encode(json.dumps(builds).encode()).decode()}
+          endpoint='repos/'+repo+'/contents/current-builds.json'
+          p=subprocess.run(['gh','api',endpoint],capture_output=True,text=True)
+          if p.returncode==0: req['sha']=json.loads(p.stdout)['sha']
+          open('request.json','w').write(json.dumps(req))
+          subprocess.run(['gh','api','--method','PUT',endpoint,'--input','request.json'],check=True)
+          PY

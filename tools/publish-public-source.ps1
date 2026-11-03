@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $privateRepo = 'R347H4CK3R/BOZ-Modern-iOS'
 $publicRepo = 'R347H4CK3R/BOZ-Strata-Source'
-$releaseTag = 'startup-trace-v2'
+$releaseTag = 'engine-trace-v3'
 $staging = Join-Path $env:TEMP ('BOZ-Publish-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $staging | Out-Null
 function GhChecked {
@@ -30,17 +30,17 @@ Write-Output ('Verified IPA SHA256: '+$actual)
 if ($LASTEXITCODE -eq 0) {
     GhChecked -GhArgs @('release','upload',$releaseTag,$ipa,$checksumFile,'--repo',$publicRepo,'--clobber') | Out-Null
 } else {
-    GhChecked -GhArgs @('release','create',$releaseTag,$ipa,$checksumFile,'--repo',$publicRepo,'--title','BOZ unsigned startup trace v2','--notes','Experimental unsigned compatibility build 135.5. Includes ordered segment layout and startup diagnostics. Package checks passed; on-device launch and gameplay are not verified.','--prerelease') | Out-Null
+    GhChecked -GhArgs @('release','create',$releaseTag,$ipa,$checksumFile,'--repo',$publicRepo,'--title','BOZ unsigned startup trace v3','--notes','Experimental unsigned compatibility build 135.6. Includes ordered segment layout and startup diagnostics. Package checks passed; on-device launch and gameplay are not verified.','--prerelease') | Out-Null
 }
 $catalogResponse = (GhChecked -GhArgs @('api',('repos/'+$privateRepo+'/contents/strata-source.json'))) | ConvertFrom-Json
 $catalogText = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($catalogResponse.content))
 $catalogText = $catalogText.Replace($privateRepo,$publicRepo)
 $parsed = $catalogText | ConvertFrom-Json
-if ($parsed.apps[0].versions[0].buildNumber -ne '135.5') { throw 'Unexpected source build version' }
+if ($parsed.apps[0].versions[0].buildNumber -ne '135.6') { throw 'Unexpected source build version' }
 PutFile -RemotePath 'strata-source.json' -Bytes ([Text.Encoding]::UTF8.GetBytes($catalogText))
 $icon = (GhChecked -GhArgs @('api',('repos/'+$privateRepo+'/contents/source-icon.png'))) | ConvertFrom-Json
 PutFile -RemotePath 'source-icon.png' -Bytes ([Convert]::FromBase64String($icon.content))
-$readme = "# BOZ for Strata\n\nAdd this catalog in Strata Sources:\n\nhttps://raw.githubusercontent.com/$publicRepo/main/strata-source.json\n\nExperimental unsigned compatibility build 135.5. Launch and gameplay remain unverified. Game belongs to Activision. This repository contains installation metadata, the icon, and the packaged compatibility build only. Diagnostic reports and build inputs are kept in a separate private repository.\n"
+$readme = "# BOZ for Strata\n\nAdd this catalog in Strata Sources:\n\nhttps://raw.githubusercontent.com/$publicRepo/main/strata-source.json\n\nExperimental unsigned compatibility build 135.6. Launch and gameplay remain unverified. Game belongs to Activision. This repository contains installation metadata, the icon, and the packaged compatibility build only. Diagnostic reports and build inputs are kept in a separate private repository.\n"
 PutFile -RemotePath 'README.md' -Bytes ([Text.Encoding]::UTF8.GetBytes($readme.Replace('\n',[Environment]::NewLine)))
 GhChecked -GhArgs @('repo','view',$publicRepo,'--json','isPrivate,url') 
 GhChecked -GhArgs @('release','view',$releaseTag,'--repo',$publicRepo,'--json','assets,url')

@@ -24,10 +24,10 @@ jobs:
         run: |
           cd output
           sha256sum --check BOZ-Modern-iOS-unsigned.sha256
-          if gh release view startup-trace-v2 --repo "$REPO" >/dev/null 2>&1; then
-            gh release upload startup-trace-v2 BOZ-Modern-iOS-unsigned.ipa BOZ-Modern-iOS-unsigned.sha256 --clobber --repo "$REPO"
+          if gh release view engine-trace-v3 --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload engine-trace-v3 BOZ-Modern-iOS-unsigned.ipa BOZ-Modern-iOS-unsigned.sha256 --clobber --repo "$REPO"
           else
-            gh release create startup-trace-v2 BOZ-Modern-iOS-unsigned.ipa BOZ-Modern-iOS-unsigned.sha256 --repo "$REPO" --title 'BOZ unsigned — startup trace v2' --notes 'Startup trace v2 with persistent previous session, fault PC/LR, method checkpoints; structurally ordered VM/file segments with remapped loader references, build 135.5; guest-image offset fix; persistent local diagnostics; optional private GitHub issue reporting using a user-provided fine-grained token stored in Keychain. Package checks passed. Physical-device launch, gameplay and report uploads still require testing.' --prerelease
+            gh release create engine-trace-v3 BOZ-Modern-iOS-unsigned.ipa BOZ-Modern-iOS-unsigned.sha256 --repo "$REPO" --title 'BOZ unsigned — startup trace v3' --notes 'Startup trace v3 with persistent previous session, fault PC/LR, method checkpoints; structurally ordered VM/file segments with remapped loader references, build 135.6; guest-image offset fix; persistent local diagnostics; optional private GitHub issue reporting using a user-provided fine-grained token stored in Keychain. Package checks passed. Physical-device launch, gameplay and report uploads still require testing.' --prerelease
           fi
       - name: Update Strata install catalog
         if: env.BUILD_RESULT == 'success'
@@ -45,7 +45,7 @@ jobs:
           repo=os.environ['REPO']; run=os.environ['BUILD_ID']
           report={'run_id':run,'build_result':os.environ['BUILD_RESULT'],'publish_result':os.environ['PUBLISH_RESULT']}
           if report['build_result']=='success':
-              code,data=gh('release','view','startup-trace-v2','--repo',repo,'--json','assets,url')
+              code,data=gh('release','view','engine-trace-v3','--repo',repo,'--json','assets,url')
               if code==0: report['release']=json.loads(data)
           else:
               code,data=gh('run','view',run,'--repo',repo,'--log-failed')

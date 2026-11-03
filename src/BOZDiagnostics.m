@@ -207,7 +207,7 @@ __attribute__((constructor)) static void BOZDiagnosticsStart(void) {
             sigemptyset(&action.sa_mask);action.sa_flags=SA_SIGINFO;
             sigaction(signals[i],&action,&BOZPreviousSignals[signals[i]]);
         }
-        BOZDiagnosticLog([NSString stringWithFormat:@"diagnostics=v2 iOS=%@ ARM64 guest-image-fix=enabled",UIDevice.currentDevice.systemVersion]);
+        BOZDiagnosticLog([NSString stringWithFormat:@"diagnostics=v3 iOS=%@ ARM64 guest-image-fix=enabled",UIDevice.currentDevice.systemVersion]);
         NSNotificationCenter *nc=NSNotificationCenter.defaultCenter;
         [nc addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *n) {
             BOZDiagnosticLog(@"lifecycle=active");

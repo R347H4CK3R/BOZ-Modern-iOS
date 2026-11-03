@@ -10,6 +10,9 @@ on:
       - 'tools/normalize_marmalade.py'
       - 'src/BOZDiagnostics.m'
       - 'src/BOZStartupTrace.m'
+      - 'src/BOZEngineTrace.m'
+      - 'src/fishhook.c'
+      - 'src/fishhook.h'
 concurrency:
   group: boz-unsigned-build
   cancel-in-progress: true
@@ -51,9 +54,10 @@ jobs:
         run: |
           mkdir verify
           unzip -q repair/boz-v1.3.5-mp.ipa -d verify
+          cp src/FISHHOOK-LICENSE verify/Payload/blackops.app/ThirdParty-Fishhook.txt
           python3 tools/normalize_marmalade.py verify/Payload/blackops.app/blackops
-          plutil -replace CFBundleVersion -string 135.5 verify/Payload/blackops.app/Info.plist
-          plutil -replace CFBundleDisplayName -string 'COD:BOZ Trace v2' verify/Payload/blackops.app/Info.plist
+          plutil -replace CFBundleVersion -string 135.6 verify/Payload/blackops.app/Info.plist
+          plutil -replace CFBundleDisplayName -string 'COD:BOZ Trace v3' verify/Payload/blackops.app/Info.plist
           find verify/Payload -type f | while IFS= read -r f; do
             if file "$f" | grep -q 'Mach-O'; then
               codesign --remove-signature "$f" || exit 1

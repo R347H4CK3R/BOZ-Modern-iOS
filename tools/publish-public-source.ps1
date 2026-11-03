@@ -26,7 +26,7 @@ $expected = ((Get-Content -LiteralPath $checksumFile -Raw).Trim() -split '\s+')[
 $actual = (Get-FileHash -LiteralPath $ipa -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actual -ne $expected.ToLowerInvariant()) { throw 'IPA checksum mismatch' }
 Write-Output ('Verified IPA SHA256: '+$actual)
-& gh release view $releaseTag --repo $publicRepo 2>$null | Out-Null
+cmd /c "gh release view $releaseTag --repo $publicRepo >nul 2>&1"
 if ($LASTEXITCODE -eq 0) {
     GhChecked -GhArgs @('release','upload',$releaseTag,$ipa,$checksumFile,'--repo',$publicRepo,'--clobber') | Out-Null
 } else {
@@ -42,6 +42,10 @@ $icon = (GhChecked -GhArgs @('api',('repos/'+$privateRepo+'/contents/source-icon
 PutFile -RemotePath 'source-icon.png' -Bytes ([Convert]::FromBase64String($icon.content))
 $readme = "# BOZ for Strata\n\nAdd this catalog in Strata Sources:\n\nhttps://raw.githubusercontent.com/$publicRepo/main/strata-source.json\n\nExperimental unsigned compatibility build 135.6. Launch and gameplay remain unverified. Game belongs to Activision. This repository contains installation metadata, the icon, and the packaged compatibility build only. Diagnostic reports and build inputs are kept in a separate private repository.\n"
 PutFile -RemotePath 'README.md' -Bytes ([Text.Encoding]::UTF8.GetBytes($readme.Replace('\n',[Environment]::NewLine)))
+$buildStatusFile = (GhChecked -GhArgs @('api',('repos/'+$privateRepo+'/contents/diagnostic-build-status.json'))) | ConvertFrom-Json
+$buildStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($buildStatusFile.content)) | ConvertFrom-Json
+$buildCommit = GhChecked -GhArgs @('run','view',[string]$buildStatus.run_id,'--repo',$privateRepo,'--json','headSha','--jq','.headSha')
+PutFile -RemotePath 'SOURCE_COMMIT' -Bytes ([Text.Encoding]::UTF8.GetBytes($buildCommit.Trim()+[Environment]::NewLine))
 GhChecked -GhArgs @('repo','view',$publicRepo,'--json','isPrivate,url') 
 GhChecked -GhArgs @('release','view',$releaseTag,'--repo',$publicRepo,'--json','assets,url')
 Write-Output 'PUBLIC_SOURCE_PUBLISHED'

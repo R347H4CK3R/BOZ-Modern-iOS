@@ -16,6 +16,12 @@ __attribute__((constructor)) static void InstallBOZStartupTrace(void) {
         SEL sel=sel_registerName(names[i]); Method method=OwnMethod(c,sel);
         if(!method)continue;
         IMP original=method_getImplementation(method);
+        char returnType[16]={0};method_getReturnType(method,returnType,sizeof(returnType));
+        if(returnType[0]!='B' && returnType[0]!='c') {
+            BOZDiagnosticLog(@"trace=skipped-nonboolean-launch-method");continue;
+        }
+        Dl_info image={0};
+        if(dladdr((void *)original,&image))BOZDiagnosticLog([NSString stringWithFormat:@"game-image-base=%p",image.dli_fbase]);
         NSString *label=[NSString stringWithUTF8String:names[i]];
         IMP replacement=imp_implementationWithBlock(^BOOL(id object,UIApplication *app,id options){
             BOZDiagnosticLog([label stringByAppendingString:@" enter"]);

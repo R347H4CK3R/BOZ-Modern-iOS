@@ -7,6 +7,9 @@
 #import <signal.h>
 #import <unistd.h>
 #import <fcntl.h>
+#import <string.h>
+#import <stdlib.h>
+#import <stdio.h>
 #import "fishhook.h"
 
 extern void BOZDiagnosticLog(NSString *message);

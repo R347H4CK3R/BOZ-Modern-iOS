@@ -1,0 +1,50 @@
+name: Build unsigned BOZ
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - name: Fetch pinned repair source
+        run: |
+          git clone https://github.com/Producdevity/cod-boz-ios.git repair
+          git -C repair checkout de2574afbe3ff7811989f3fb4b38da373049ef0a
+      - name: Download private input
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download source-input --repo "${{ github.repository }}" --pattern 'boz-v1.3.5.ipa' --dir .
+          echo 'b7eba04a7ccf957a7530e65164b33f6cb7151827160de37ff11b775f6cef332d  boz-v1.3.5.ipa' | shasum -a 256 --check
+      - name: Install firmware extraction tool
+        run: brew install blacktop/tap/ipsw
+      - name: Build compatibility repair
+        run: bash repair/build-fixed-ipa.sh "$PWD/boz-v1.3.5.ipa"
+      - name: Remove embedded signatures and validate package
+        run: |
+          mkdir verify
+          unzip -q repair/boz-v1.3.5-mp.ipa -d verify
+          find verify/Payload -type f | while IFS= read -r f; do
+            if file "$f" | grep -q 'Mach-O'; then
+              codesign --remove-signature "$f" || exit 1
+              if codesign -d "$f" 2>/dev/null; then
+                echo "Unexpected signature: $f"; exit 1
+              fi
+            fi
+          done
+          test "$(lipo -archs verify/Payload/blackops.app/blackops)" = arm64
+          test -f verify/Payload/blackops.app/Frameworks/libstdc++.6.dylib
+          test -f verify/Payload/blackops.app/Frameworks/BOZFullscreenFix.dylib
+          plutil -lint verify/Payload/blackops.app/Info.plist
+          (cd verify && zip -qry -X ../BOZ-Modern-iOS-unsigned.ipa Payload)
+          unzip -t BOZ-Modern-iOS-unsigned.ipa
+          shasum -a 256 BOZ-Modern-iOS-unsigned.ipa > BOZ-Modern-iOS-unsigned.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BOZ-Modern-iOS-unsigned
+          path: |
+            BOZ-Modern-iOS-unsigned.ipa
+            BOZ-Modern-iOS-unsigned.sha256
+          retention-days: 14

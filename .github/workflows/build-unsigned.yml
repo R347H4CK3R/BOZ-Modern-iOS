@@ -19,7 +19,7 @@ jobs:
           gh release download source-input --repo "${{ github.repository }}" --pattern 'boz-v1.3.5.ipa' --dir .
           echo 'b7eba04a7ccf957a7530e65164b33f6cb7151827160de37ff11b775f6cef332d  boz-v1.3.5.ipa' | shasum -a 256 --check
       - name: Install firmware extraction tool
-        run: brew install blacktop/tap/ipsw
+        run: brew install --formula blacktop/tap/ipsw
       - name: Build compatibility repair
         run: bash repair/build-fixed-ipa.sh "$PWD/boz-v1.3.5.ipa"
       - name: Remove embedded signatures and validate package

@@ -1,0 +1,24 @@
+name: Publish unsigned IPA
+on:
+  push:
+    paths:
+      - '.github/workflows/publish-ipa.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download 41681186426 --repo "${{ github.repository }}" --name BOZ-Modern-iOS-unsigned --dir output
+      - name: Verify checksum and publish direct IPA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd output
+          sha256sum --check BOZ-Modern-iOS-unsigned.sha256
+          gh release create unsigned-v1.3.5 "BOZ-Modern-iOS-unsigned.ipa" "BOZ-Modern-iOS-unsigned.sha256" --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "BOZ Modern iOS — unsigned compatibility build" --notes "Built from the supplied BOZ 1.3.5 IPA using repair commit de2574afbe3ff7811989f3fb4b38da373049ef0a. ARM64 package, archive integrity, required libraries and absent embedded signatures verified. Physical-device gameplay is not yet verified. The upstream repair uses a community multiplayer server." --prerelease

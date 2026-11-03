@@ -1,0 +1,45 @@
+name: Build BOZ Free Shop
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-free-shop.yml'
+      - 'src/BOZFreeShop.m'
+      - 'tests/test_free_shop_credit_routine.py'
+concurrency:
+  group: boz-free-shop
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile standalone ARM64 shop add-on
+        run: |
+          mkdir output
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=15.0 -fobjc-arc -std=gnu11 -O2 -dynamiclib -framework Foundation -framework UIKit -Wl,-install_name,@rpath/BOZFreeShop.dylib -Wl,-headerpad,0x1000 -o output/BOZFreeShop.dylib src/BOZFreeShop.m
+          codesign --remove-signature output/BOZFreeShop.dylib
+          if codesign -d output/BOZFreeShop.dylib 2>/dev/null; then exit 1; fi
+          test "$(lipo -archs output/BOZFreeShop.dylib)" = arm64
+          otool -L output/BOZFreeShop.dylib
+          test "$(stat -f%z output/BOZFreeShop.dylib)" -lt 1048576
+          shasum -a 256 output/BOZFreeShop.dylib > output/BOZFreeShop.sha256
+          cp docs/free-shop.md output/INSTALL.md
+      - name: Verify pinned game's real credit code
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download loader-fix-v5 --repo "${{ github.repository }}" --pattern BOZ-Modern-iOS-unsigned.ipa --dir baseline
+          echo '4afd45ed923807c5f02e63cba23ee6e9fd27a01abd7fc4db6232cb3c0cefae0c  baseline/BOZ-Modern-iOS-unsigned.ipa' | shasum -a 256 --check
+          unzip -p baseline/BOZ-Modern-iOS-unsigned.ipa Payload/blackops.app/blackops > baseline/blackops
+          python3 -m venv "$RUNNER_TEMP/shop-tests"
+          "$RUNNER_TEMP/shop-tests/bin/python" -m pip install unicorn==2.1.4
+          "$RUNNER_TEMP/shop-tests/bin/python" tests/test_free_shop_credit_routine.py baseline/blackops
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BOZ-Free-Shop
+          path: output/
+          retention-days: 30

@@ -1,22 +1,24 @@
-# BOZ Free Shop v1 (Strata add-on)
+# BOZ Free Shop v2 (Strata add-on)
 
-This is a small, unsigned ARM64 dylib for the working BOZ 1.3.5 Loader Fix v5. It does not replace or download the full game.
+v1 could freeze after its backup while invoking the game's native add/save routine. v2 does not invoke that routine. It updates the validated local balance field and persists credits through its own wallet on a background serial queue.
 
-## Install
+## Replace v1
 
-1. Close BOZ completely.
-2. In Strata, open Tweaks. Create a folder named BOZ-Free-Shop and open that folder.
-3. Use + / Import Tweak to import BOZFreeShop.dylib into it. Leave the add-on enabled.
-4. Open BOZ's app settings and select BOZ-Free-Shop as its Tweak Folder. Tweak loading must be enabled.
-5. Launch BOZ normally. At the main menu, use the Free Shop button to add 1,000 or 10,000 credits.
-6. If the old shop is stuck on Accessing Store, cancel it and use Free Shop instead.
+1. Close BOZ completely; force-close Strata if it is frozen.
+2. In Strata Tweaks, open the per-game BOZ-Free-Shop folder.
+3. Delete or disable the old BOZFreeShop.dylib, then import the new BOZFreeShop.dylib. Keep only one enabled copy.
+4. Keep BOZ-Free-Shop selected as BOZ's Tweak Folder.
+5. Relaunch, wait for the main menu, and use Free Shop to add credits.
+6. After the saved-balance message, close and reopen the game to test persistence.
 
-Strata signs the add-on using its existing signing setup. Keep the working game installed. To remove the add-on, select None for Tweak Folder, or disable BOZFreeShop.dylib, then restart BOZ.
+This is a small unsigned dylib. No full-game download or reinstall is needed. Strata handles signing through its existing tweak setup.
 
-## Behavior and verification
+## Wallet and diagnostics
 
-The add-on fingerprints the pinned credit routine before installing a GLView.show hook. It recognizes the store singleton and vtable, queues the selected credit amount, and invokes the original add/save routine from the render path. It caps local credits at 1,000,000 and makes a copy of existing Documents .i3d save files in BOZShopBackups before each grant.
+The wallet is stored at Documents/BOZFreeShop/wallet.plist in the game's data container. Existing Documents .i3d saves are backed up under BOZShopBackups before grants. Keep the add-on enabled to restore this wallet. Removing the add-on does not remove the wallet file, but the unmodified game does not read the add-on wallet. The native credit/save files are not rewritten by v2.
 
-Only a zero save status and the expected new in-memory balance produce a success message. Detailed results are written locally to Documents/BOZDiagnostics/shop.log. The addon does not contact Apple or submit purchases, receipts, or reports.
+Balance writes use the supported VM API after validating the game fingerprint, store singleton, vtable and current balance. Grants are capped at 1,000,000 total credits. Observed balance changes, including spending, are saved by the background queue. Wait for the saved confirmation before closing after a grant.
 
-ARM64 emulation checks credit addition, the upper test balance, negative clamping and the exactly-once invocation of the original serializer. CI compiles the iPhone dylib and verifies it is ARM64, unsigned and under 1 MB. Phone UI, actual filesystem persistence after restart and in-game spending still require testing. The unmodified game remains the fallback; uninstalling the add-on does not restore or roll back granted credits.
+Shop status events are recorded in BOZDiagnostics/shop.log and appended to the session log used by the existing GitHub diagnostic reporter. Wallet contents and unrelated files are not uploaded. No Apple purchases or receipts are generated.
+
+CI tests actual Foundation file creation/reload, changes resembling spending, limits, preservation on rejected writes and corrupt-wallet rejection; it compiles an unsigned ARM64 iPhone dylib. The pinned native credit code is also checked to validate the expected field layout. In-game UI, spending, lack of freezes and persistence on the phone remain physical-device tests.

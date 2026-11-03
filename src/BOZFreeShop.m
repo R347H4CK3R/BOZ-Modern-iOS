@@ -6,13 +6,21 @@
 #import <stdatomic.h>
 #import <stdint.h>
 #import <string.h>
+#import <fcntl.h>
+#import <unistd.h>
+#import "BOZWalletStore.h"
 
 // Only the SHA-pinned 1.3.5 ARM64 game used by Loader Fix v5 is supported.
 static uintptr_t gBase;
 static IMP gShow;
 static _Atomic(int) gPending, gBalance, gReady;
 static UIButton *gButton;
-static unsigned gFrames;
+static unsigned gReadyFrames;
+static dispatch_queue_t gWalletQueue;
+static NSString *gWalletPath;
+static _Atomic(int) gWalletLoaded,gStoredBalance;
+static BOOL gWalletRestored;
+static int32_t gLastBalance;
 
 static BOOL ReadMemory(uintptr_t address, void *out, size_t size) {
     _Static_assert(sizeof(vm_address_t)>=sizeof(uintptr_t),"ARM64 VM addresses required");
@@ -33,6 +41,10 @@ static void ShopLog(NSString *message) {
         NSFileHandle *file=[NSFileHandle fileHandleForWritingAtPath:path];
         @try { [file seekToEndOfFile]; [file writeData:line]; [file synchronizeFile]; [file closeFile]; }
         @catch(NSException *exception) { NSLog(@"[BOZFreeShop] %@",message); }
+        // The existing report uploader reads session.log. Only our own status
+        // events are appended, never wallet contents or unrelated files.
+        int fd=open([[folder stringByAppendingPathComponent:@"session.log"] fileSystemRepresentation],O_WRONLY|O_APPEND);
+        if(fd>=0) { write(fd,line.bytes,line.length);close(fd); }
     }
 }
 static UIWindow *GameWindow(void) {
@@ -63,6 +75,23 @@ static BOOL Store(uintptr_t *object,int32_t *balance) {
     if(!ReadMemory(pointer+0x20,balance,sizeof(*balance)) || *balance<0) return NO;
     *object=pointer; return YES;
 }
+static BOOL SetBalance(uintptr_t object,int32_t balance) {
+    if(balance<0 || balance>1000000) return NO;
+    kern_return_t status=vm_write(mach_task_self(),(vm_address_t)(object+0x20),(vm_offset_t)&balance,sizeof(balance));
+    uintptr_t current=0;int32_t after=0;
+    return status==KERN_SUCCESS && Store(&current,&after) && current==object && after==balance;
+}
+static void SaveWallet(int32_t balance,BOOL notify) {
+    dispatch_async(gWalletQueue,^{ @autoreleasepool {
+        NSError *error=nil;
+        BOOL saved=[BOZWalletStore saveBalance:balance atPath:gWalletPath error:&error];
+        ShopLog([NSString stringWithFormat:@"wallet-save balance=%d success=%d",balance,saved]);
+        if(notify) {
+            NSString *message=saved ? [NSString stringWithFormat:@"Local balance: %d\nSaved in the add-on wallet. Keep this add-on enabled to restore it after restarting.",balance] : @"The balance changed, but the local wallet could not be saved. Keep the game open and send the diagnostic report.";
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.5*NSEC_PER_SEC)),dispatch_get_main_queue(),^{ Alert(@"Free Shop",message); });
+        }
+    } });
+}
 static BOOL BackupSaves(void) {
     NSFileManager *fm=NSFileManager.defaultManager;
     NSString *documents=Documents();
@@ -86,11 +115,24 @@ static BOOL BackupSaves(void) {
 }
 static void ShopFrame(id self,SEL selector) {
     ((void (*)(id,SEL))gShow)(self,selector);
+    if(atomic_load(&gWalletLoaded)!=1) return;
     int amount=atomic_exchange(&gPending,0);
-    if(!amount && (++gFrames%60)!=0) return;
     uintptr_t object=0;int32_t before=0;
     BOOL ready=Store(&object,&before);
-    atomic_store(&gReady,ready); if(ready) atomic_store(&gBalance,before);
+    if(!gWalletRestored && ready && ++gReadyFrames<120) { atomic_store(&gReady,0);return; }
+    if(ready && !gWalletRestored) {
+        int stored=atomic_load(&gStoredBalance);
+        if(stored>=0 && stored!=before) {
+            ready=SetBalance(object,stored);
+            ShopLog([NSString stringWithFormat:@"wallet-restore balance=%d success=%d",stored,ready]);
+            if(ready) before=stored;
+        }
+        if(ready) { gWalletRestored=YES;gLastBalance=before;if(stored<0) SaveWallet(before,NO); }
+    }
+    atomic_store(&gReady,ready); if(ready) {
+        atomic_store(&gBalance,before);
+        if(gWalletRestored && gLastBalance!=before) { gLastBalance=before;SaveWallet(before,NO); }
+    }
     if(!amount) return;
     @autoreleasepool {
         NSString *message;
@@ -98,15 +140,12 @@ static void ShopFrame(id self,SEL selector) {
         else if(amount<=0 || amount>10000 || before>1000000-amount) message=@"The local credit limit is 1,000,000. No credits were changed.";
         else if(!BackupSaves()) message=@"Could not back up the save files. No credits were changed.";
         else {
-            // Executed from the game's GLView.show path, never from UIKit's timer.
-            int (*addCredits)(void *,int32_t)=(void *)(gBase+0x1d7434);
-            int status=addCredits((void *)object,amount);
-            int32_t after=0;uintptr_t current=0;
-            BOOL valid=Store(&current,&after) && current==object && after==before+amount;
-            if(valid) atomic_store(&gBalance,after);
-            ShopLog([NSString stringWithFormat:@"grant=%d before=%d after=%d save-status=%d verified=%d thread-main=%d",amount,before,after,status,valid,NSThread.isMainThread]);
-            if(valid && status==0) message=[NSString stringWithFormat:@"Added %d credits.\nBalance: %d\n\nThe game reported a successful save. Restart the game to confirm the balance persists.",amount,after];
-            else message=@"The credit/save check did not complete successfully. See BOZDiagnostics/shop.log before trying again.";
+            int32_t after=before+amount;
+            ShopLog([NSString stringWithFormat:@"grant-write enter amount=%d before=%d",amount,before]);
+            BOOL valid=SetBalance(object,after);
+            ShopLog([NSString stringWithFormat:@"grant-write return after=%d success=%d",after,valid]);
+            if(valid) { atomic_store(&gBalance,after);gLastBalance=after;SaveWallet(after,YES);return; }
+            message=@"The balance could not be updated. Send the diagnostic report before trying again.";
         }
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.5*NSEC_PER_SEC)),dispatch_get_main_queue(),^{ Alert(@"Free Shop",message); });
     }
@@ -120,6 +159,7 @@ static void ShopFrame(id self,SEL selector) {
     UIViewController *controller=GameWindow().rootViewController;
     while(controller.presentedViewController) controller=controller.presentedViewController;
     if(!controller || [controller isKindOfClass:UIAlertController.class]) return;
+    if(atomic_load(&gWalletLoaded)==-1) { Alert(@"Free Shop",@"The saved add-on wallet could not be read. Send the diagnostic report. Existing wallet data was not overwritten.");return; }
     if(!atomic_load(&gReady)) { Alert(@"Free Shop",@"Wait for the main menu to finish loading. If the old shop says Accessing Store, cancel it first.");return; }
     UIAlertController *menu=[UIAlertController alertControllerWithTitle:@"Free Shop" message:[NSString stringWithFormat:@"Local balance: %d\nChoose a free credit grant. No App Store checkout is used.",atomic_load(&gBalance)] preferredStyle:UIAlertControllerStyleAlert];
     for(NSNumber *number in @[@1000,@10000]) {
@@ -147,7 +187,7 @@ static void Install(void) {
         if(!show) return;
         gBase=base;gShow=method_getImplementation(show);
         method_setImplementation(show,(IMP)ShopFrame);
-        ShopLog(@"free-shop=v1 installed supported-guest=1");
+        ShopLog(@"free-shop=v2 installed supported-guest=1 native-save-call=disabled");
     }
     UIWindow *window=GameWindow();if(!window) return;
     if(!gButton) {
@@ -167,6 +207,15 @@ static void Install(void) {
 }
 __attribute__((constructor)) static void StartFreeShop(void) {
     dispatch_async(dispatch_get_main_queue(),^{
+        gWalletQueue=dispatch_queue_create("dev.boz.free-shop.wallet",DISPATCH_QUEUE_SERIAL);
+        gWalletPath=[Documents() stringByAppendingPathComponent:@"BOZFreeShop/wallet.plist"];
+        dispatch_async(gWalletQueue,^{ @autoreleasepool {
+            int32_t stored=-1;NSError *error=nil;
+            BOOL valid=gWalletPath && [BOZWalletStore loadAtPath:gWalletPath balance:&stored error:&error];
+            atomic_store(&gStoredBalance,stored);
+            atomic_store(&gWalletLoaded,valid?1:-1);
+            ShopLog([NSString stringWithFormat:@"wallet-load valid=%d stored=%d",valid,stored]);
+        } });
         Install();
         [NSTimer scheduledTimerWithTimeInterval:2 repeats:YES block:^(NSTimer *timer){ Install(); }];
     });

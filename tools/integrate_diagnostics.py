@@ -7,6 +7,12 @@ assert s.count('-framework CoreGraphics -framework Foundation -framework UIKit')
 s=s.replace('-framework CoreGraphics -framework Foundation -framework UIKit', '-framework CoreGraphics -framework Foundation -framework UIKit -framework Security')
 assert s.count('"$fullscreen_fix_source"') == 1
 s=s.replace('"$fullscreen_fix_source"', '"$fullscreen_fix_source" "$script_dir/src/BOZDiagnostics.m"')
+
+# Legacy Marmalade segments are intentionally out of VM order. LiveContainer
+# converts the guest to MH_DYLIB; linking to iOS 13 activates fall-2019 dyld
+# ordering enforcement for dylibs. Retain the pre-2019 SDK compatibility epoch.
+assert s.count("linked_ios_sdk_version='13.0'") == 1
+s=s.replace("linked_ios_sdk_version='13.0'", "linked_ios_sdk_version='12.0'")
 p.write_text(s)
 p=Path("repair/src/BOZFullscreenFix.m")
 s=p.read_text()

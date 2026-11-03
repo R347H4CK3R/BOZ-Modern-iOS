@@ -1,0 +1,53 @@
+name: Build BOZ Controls
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-controls.yml'
+      - 'src/BOZControls.m'
+      - 'src/BOZControlsBridge.h'
+      - 'tests/test_controls_bridge.c'
+      - 'tests/test_controls_native.py'
+      - 'docs/controls.md'
+concurrency:
+  group: boz-controls
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test manual input state and import decoder
+        run: |
+          clang -std=c11 -Wall -Wextra -Werror -Isrc tests/test_controls_bridge.c -o "$RUNNER_TEMP/controls-tests"
+          "$RUNNER_TEMP/controls-tests"
+      - name: Compile unsigned ARM64 controls add-on
+        run: |
+          mkdir output
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=15.0 -fobjc-arc -std=gnu11 -O2 -dynamiclib -framework Foundation -framework UIKit -Wl,-install_name,@rpath/BOZControls.dylib -Wl,-headerpad,0x1000 -o output/BOZControls.dylib src/BOZControls.m
+          codesign --remove-signature output/BOZControls.dylib
+          if codesign -d output/BOZControls.dylib 2>/dev/null; then exit 1; fi
+          test "$(lipo -archs output/BOZControls.dylib)" = arm64
+          otool -L output/BOZControls.dylib
+          test "$(stat -f%z output/BOZControls.dylib)" -lt 1048576
+          shasum -a 256 output/BOZControls.dylib > output/BOZControls.sha256
+          cp docs/controls.md output/INSTALL.md
+      - name: Verify pinned native input handlers and import dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download loader-fix-v5 --repo "${{ github.repository }}" --pattern BOZ-Modern-iOS-unsigned.ipa --dir baseline
+          echo '4afd45ed923807c5f02e63cba23ee6e9fd27a01abd7fc4db6232cb3c0cefae0c  baseline/BOZ-Modern-iOS-unsigned.ipa' | shasum -a 256 --check
+          unzip -p baseline/BOZ-Modern-iOS-unsigned.ipa Payload/blackops.app/blackops > baseline/blackops
+          "$RUNNER_TEMP/controls-tests" baseline/blackops
+          python3 -m venv "$RUNNER_TEMP/controls-tests-python"
+          "$RUNNER_TEMP/controls-tests-python/bin/python" -m pip install unicorn==2.1.4
+          "$RUNNER_TEMP/controls-tests-python/bin/python" tests/test_controls_native.py baseline/blackops
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BOZ-Touch-Controls
+          path: output/
+          retention-days: 30

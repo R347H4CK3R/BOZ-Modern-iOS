@@ -1,0 +1,64 @@
+name: Build BOZ Integrated Input
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-integrated-input.yml'
+      - 'src/BOZModernInput.m'
+      - 'src/BOZTouchCore.h'
+      - 'src/BOZTouchCore.c'
+      - 'tests/test_touch_core.c'
+      - 'tests/test_integrated_native.py'
+      - 'tests/test_package_integrated_input.py'
+      - 'tests/test_modern_frame.py'
+      - 'tools/package_integrated_input.py'
+      - 'docs/integrated-input.md'
+permissions:
+  contents: read
+concurrency:
+  group: boz-integrated-input
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test input math, finger ownership and package validation
+        run: |
+          clang -std=c11 -Wall -Wextra -Werror -Isrc tests/test_touch_core.c src/BOZTouchCore.c -lm -o "$RUNNER_TEMP/touch-tests"
+          "$RUNNER_TEMP/touch-tests"
+          python3 tests/test_package_integrated_input.py
+          python3 tests/test_modern_frame.py
+      - name: Build unsigned ARM64 integrated input module
+        run: |
+          mkdir output
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=15.0 -std=c11 -O2 -c src/BOZTouchCore.c -o "$RUNNER_TEMP/touch-core.o"
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=15.0 -fobjc-arc -std=gnu11 -O2 -dynamiclib -framework Foundation -framework UIKit -framework CoreGraphics -Wl,-install_name,@rpath/BOZModernInput.dylib -Wl,-headerpad,0x1000 -o output/BOZModernInput.dylib src/BOZModernInput.m "$RUNNER_TEMP/touch-core.o"
+          codesign --remove-signature output/BOZModernInput.dylib
+          if codesign -d output/BOZModernInput.dylib 2>/dev/null; then exit 1; fi
+          test "$(lipo -archs output/BOZModernInput.dylib)" = arm64
+          otool -L output/BOZModernInput.dylib
+      - name: Verify pinned game ABI and no-aim-assist fields
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download loader-fix-v5 --repo "${{ github.repository }}" --pattern BOZ-Modern-iOS-unsigned.ipa --dir baseline
+          echo '4afd45ed923807c5f02e63cba23ee6e9fd27a01abd7fc4db6232cb3c0cefae0c  baseline/BOZ-Modern-iOS-unsigned.ipa' | shasum -a 256 --check
+          unzip -p baseline/BOZ-Modern-iOS-unsigned.ipa Payload/blackops.app/blackops > baseline/blackops
+          python3 -m venv "$RUNNER_TEMP/modern-tests"
+          "$RUNNER_TEMP/modern-tests/bin/python" -m pip install unicorn==2.1.4
+          "$RUNNER_TEMP/modern-tests/bin/python" tests/test_integrated_native.py baseline/blackops
+          "$RUNNER_TEMP/modern-tests/bin/python" tests/test_controls_native.py baseline/blackops
+      - name: Embed input module and verify content preservation
+        run: |
+          python3 tools/package_integrated_input.py baseline/BOZ-Modern-iOS-unsigned.ipa output/BOZModernInput.dylib output/BOZ-Integrated-Input-unsigned.ipa
+          cp docs/integrated-input.md output/INSTALL.md
+          cd output
+          shasum -a 256 BOZ-Integrated-Input-unsigned.ipa > BOZ-Integrated-Input.sha256
+          shasum -a 256 BOZModernInput.dylib > BOZModernInput.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BOZ-Integrated-Input
+          path: output/
+          retention-days: 14

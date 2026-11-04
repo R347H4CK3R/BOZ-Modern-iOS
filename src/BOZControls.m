@@ -87,8 +87,8 @@ static BOOL ApplyProfile(void) {
 }
 // Native UI operations run only on the recorded engine thread. Re-resolve
 // elements from the current UI tree; never dereference saved element pointers.
-typedef struct { const char *name;int scope;uintptr_t identity;unsigned saved; } HiddenWidget;
-static HiddenWidget NativeWidgets[]={
+typedef struct { const char *name;int scope; } HiddenWidget;
+static const HiddenWidget NativeWidgets[]={
     {"IronSight_img",1},{"IronSight_Btn",1},{"IronSight_img_lefty",1},{"IronSight_Btn_lefty",1},
     {"Reload_img",1},{"Reload_SwapWeapon_Btn",1},{"Reload_img_lefty",1},{"Reload_SwapWeapon_Btn_lefty",1},
     {"grenade_button",1},{"grenade_button_lefty",1},
@@ -97,66 +97,93 @@ static HiddenWidget NativeWidgets[]={
     {"melee",0},{"melee_lefty",0},{"Melee_Btn",0},{"Melee_Btn_lefty",0},
     {"Button",2},{"Image",2}
 };
-static uintptr_t POIIdentity;
-static int32_t POIPosition[2];
+typedef struct { uintptr_t identity;size_t templateIndex;unsigned flags;int32_t position[2];BOOL geometry; } WidgetSnapshot;
+static WidgetSnapshot SavedWidgets[512];
+typedef struct { uintptr_t identity;int32_t position[2]; } PromptSnapshot;
+static PromptSnapshot SavedPrompts[64];
 static BOOL HUDWasEnabled;
-static uintptr_t UIElement(uintptr_t ui,uintptr_t scheme,uintptr_t poi,const HiddenWidget *entry) {
-    if(entry->scope) {
-        uintptr_t root=entry->scope==1?scheme:poi;
-        return root?((uintptr_t (*)(uintptr_t,const char *,int,int))(B+0x4ca68c))(root,entry->name,1,0):0;
+static void ProcessNativeWidget(size_t index,uintptr_t element,BOOL replace) {
+    if(!element) return;
+    WidgetSnapshot *record=NULL,*empty=NULL;
+    for(size_t i=0;i<512;i++) {
+        if(SavedWidgets[i].identity==element&&SavedWidgets[i].templateIndex==index) { record=SavedWidgets+i;break; }
+        if(!SavedWidgets[i].identity&&!empty) empty=SavedWidgets+i;
     }
-    return ((uintptr_t (*)(uintptr_t,const char *,int))(B+0x283d54))(ui,entry->name,0);
+    if(replace) {
+        if(!record) {
+            if(!empty) return; // Fail open rather than hide without restoration data.
+            record=empty;record->identity=element;record->templateIndex=index;
+            unsigned visible=((int (*)(uintptr_t,unsigned))(B+0x4cc0dc))(element,2);
+            unsigned enabled=((int (*)(uintptr_t,unsigned))(B+0x4cc0dc))(element,1);
+            record->flags=(visible?2:0)|(enabled?1:0);
+            record->geometry=Read(element+0xa0,record->position,sizeof(record->position));
+        }
+        ((void (*)(uintptr_t,int))(B+0x4cdaf8))(element,0);
+        ((void (*)(uintptr_t,int))(B+0x4cdb94))(element,0);
+        // The game can re-show a contextual icon during its next update.
+        // Keep its old hit target outside the viewport as well as invisible.
+        int32_t position[2]={-30000,-30000},current[2]={0};
+        if(record->geometry&&Read(element+0xa0,current,sizeof(current))&&(current[0]!=position[0]||current[1]!=position[1])) ((void (*)(uintptr_t,const int32_t *,int))(B+0x4cb010))(element,position,0);
+    } else if(record) {
+        if(record->geometry) ((void (*)(uintptr_t,const int32_t *,int))(B+0x4cb010))(element,record->position,0);
+        BOOL permit=NativeWidgets[index].scope!=2||atomic_load(&UseAvailable);
+        ((void (*)(uintptr_t,int))(B+0x4cdaf8))(element,permit&&!!(record->flags&2));
+        ((void (*)(uintptr_t,int))(B+0x4cdb94))(element,permit&&!!(record->flags&1));
+        record->identity=0;
+    }
 }
 static BOOL NativeUseReady(uintptr_t manager) {
     uint8_t available=0;uintptr_t client=0,context=0;
     return Read(manager+0x98,&available,1) && available && Read(B+0x637218,&client,8) && client && Read(client+0x2c0,&context,8) && context;
 }
 static void SyncNativeHUD(BOOL replace) {
-    BOOL restorePending=POIIdentity!=0;
-    for(size_t i=0;i<sizeof(NativeWidgets)/sizeof(*NativeWidgets);i++) restorePending|=NativeWidgets[i].identity!=0;
+    BOOL restorePending=NO;
+    for(size_t i=0;i<512;i++) restorePending|=SavedWidgets[i].identity!=0;
+    for(size_t i=0;i<64;i++) restorePending|=SavedPrompts[i].identity!=0;
     if(!replace&&!HUDWasEnabled&&!restorePending) return;
     uintptr_t ui=0,vtable=0;
     if(!Read(B+0x63ce38,&ui,8)||!ui||!Read(ui,&vtable,8)||vtable<B+0x5b8000||vtable>=B+0x6dc000) return;
     uintptr_t (*find)(uintptr_t,const char *,int)=(void *)(B+0x283d54);
-    uintptr_t scheme=find(ui,"control_Schemes",0),poi=find(ui,"ig_poi",0);
-    if(scheme) {
-        uint32_t index=0,count=0;uintptr_t children=0,selected=0;
-        if(Read(scheme+0x170,&index,4)&&Read(scheme+0x40,&count,4)&&index<count&&count<32&&Read(scheme+0x38,&children,8)&&children&&Read(children+index*8,&selected,8)) scheme=selected;
-        else scheme=0;
+    uintptr_t (*child)(uintptr_t,const char *,int,int)=(void *)(B+0x4ca68c);
+    uintptr_t group=find(ui,"control_Schemes",0),poi=find(ui,"ig_poi",0);
+    uintptr_t schemes[32]={0};uint32_t selected=0,count=0;
+    if(group) {
+        uintptr_t children=0;
+        if(!Read(group+0x170,&selected,4)||!Read(group+0x40,&count,4)||count>32||!Read(group+0x38,&children,8)||!children||!Read(children,schemes,count*8)) count=0;
     }
     unsigned hidden=0;
     for(size_t i=0;i<sizeof(NativeWidgets)/sizeof(*NativeWidgets);i++) {
-        HiddenWidget *entry=NativeWidgets+i;
-        uintptr_t element=UIElement(ui,scheme,poi,entry);
-        if(!element) continue;
-        if(replace) {
-            if(element!=entry->identity) {
-                unsigned visible=((int (*)(uintptr_t,unsigned))(B+0x4cc0dc))(element,2);
-                unsigned enabled=((int (*)(uintptr_t,unsigned))(B+0x4cc0dc))(element,1);
-                entry->saved=(visible?2:0)|(enabled?1:0);entry->identity=element;
+        const HiddenWidget *entry=NativeWidgets+i;
+        if(entry->scope==1) {
+            for(uint32_t j=0;j<count;j++) {
+                if(replace&&j!=selected) continue;
+                uintptr_t element=schemes[j]?child(schemes[j],entry->name,1,0):0;
+                ProcessNativeWidget(i,element,replace);hidden+=element!=0;
             }
-            ((void (*)(uintptr_t,int))(B+0x4cdaf8))(element,0);
-            ((void (*)(uintptr_t,int))(B+0x4cdb94))(element,0);
-            hidden++;
-        } else if(element==entry->identity) {
-            BOOL permit=entry->scope!=2||atomic_load(&UseAvailable);
-            ((void (*)(uintptr_t,int))(B+0x4cdaf8))(element,permit&&!!(entry->saved&2));
-            ((void (*)(uintptr_t,int))(B+0x4cdb94))(element,permit&&!!(entry->saved&1));
-            entry->identity=0;
+        } else {
+            uintptr_t element=entry->scope==2?(poi?child(poi,entry->name,1,0):0):find(ui,entry->name,0);
+            ProcessNativeWidget(i,element,replace);hidden+=element!=0;
         }
     }
     if(poi) {
+        PromptSnapshot *record=NULL,*empty=NULL;
+        for(size_t i=0;i<64;i++) {
+            if(SavedPrompts[i].identity==poi) { record=SavedPrompts+i;break; }
+            if(!SavedPrompts[i].identity&&!empty) empty=SavedPrompts+i;
+        }
         int32_t geometry[4]={0};uintptr_t parent=0;
         if(Read(poi+0xa0,geometry,sizeof(geometry))) {
-            if(replace&&poi!=POIIdentity) { POIIdentity=poi;POIPosition[0]=geometry[0];POIPosition[1]=geometry[1]; }
-            int32_t position[2]={POIPosition[0],POIPosition[1]},size[2]={0};
-            if(replace&&Read(poi+0x30,&parent,8)&&parent&&Read(parent+0xa8,size,sizeof(size))&&size[0]>0&&size[0]<16384&&size[1]>0&&size[1]<16384&&geometry[2]>0&&geometry[2]<=size[0]&&geometry[3]>0&&geometry[3]<=size[1]) {
-                position[0]=(int32_t)fmax(0,fmin(size[0]-geometry[2],size[0]*atomic_load(&UseX)-geometry[2]/2));
-                position[1]=(int32_t)fmax(0,fmin(size[1]-geometry[3],size[1]*fmin(0.95,atomic_load(&UseY)+0.11)-geometry[3]/2));
+            if(replace&&!record&&empty) { record=empty;record->identity=poi;record->position[0]=geometry[0];record->position[1]=geometry[1]; }
+            if(record) {
+                int32_t position[2]={record->position[0],record->position[1]},size[2]={0};
+                if(replace&&Read(poi+0x30,&parent,8)&&parent&&Read(parent+0xa8,size,sizeof(size))&&size[0]>0&&size[0]<16384&&size[1]>0&&size[1]<16384&&geometry[2]>0&&geometry[2]<=size[0]&&geometry[3]>0&&geometry[3]<=size[1]) {
+                    position[0]=(int32_t)fmax(0,fmin(size[0]-geometry[2],size[0]*atomic_load(&UseX)-geometry[2]/2));
+                    position[1]=(int32_t)fmax(0,fmin(size[1]-geometry[3],size[1]*fmin(0.95,atomic_load(&UseY)+0.11)-geometry[3]/2));
+                }
+                if(position[0]!=geometry[0]||position[1]!=geometry[1]) ((void (*)(uintptr_t,const int32_t *,int))(B+0x4cb010))(poi,position,0);
+                if(!replace) record->identity=0;
             }
-            if(poi==POIIdentity&&(position[0]!=geometry[0]||position[1]!=geometry[1])) ((void (*)(uintptr_t,const int32_t *,int))(B+0x4cb010))(poi,position,0);
         }
-        if(!replace) POIIdentity=0;
     }
     if(replace!=HUDWasEnabled) Log([NSString stringWithFormat:@"native-controls replacement=%d matched=%u transparent-buy=1",replace,hidden]);
     HUDWasEnabled=replace;

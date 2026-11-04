@@ -11,3 +11,5 @@ Task 3 packaging unit tests RED (missing packager) -> GREEN, 6/6; pinned baselin
 
 Final review: independent reviewer found two important gesture bugs. Fixed normal-end look loss by separate surface/fire streams (new regression RED -> GREEN); preserve pending normal-end deltas and cancel only the canceled producer. Fixed stale FIRE tracking with generation invalidation after resets, including surface-generation refresh. Host regression runs actual tracking methods, intentionally removes the guard to reproduce the bug, then runs the guarded methods; pending macOS CI. No additional important findings.
 Build correction: iOS compiler rejected Swift-style Objective-C tracking selector names; corrected to beginTrackingWithTouch/continueTrackingWithTouch; subsequent compilation passed before these review fixes.
+
+Ruling: editing captures background gameplay touches without producing movement/look; native pause/log top band remains accessible. This prevents native legacy gestures from activating while rearranging controls.

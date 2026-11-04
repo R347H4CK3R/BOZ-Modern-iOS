@@ -318,10 +318,10 @@ static void Frame(id self,SEL selector) {
 }
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
     for(UIView *view in self.subviews) if(!view.hidden&&view.userInteractionEnabled&&[view pointInside:[view convertPoint:point fromView:self] withEvent:event]) return YES;
-    return !atomic_load(&ExternalConflict)&&atomic_load(&Enabled)&&atomic_load(&Gameplay)&&atomic_load(&ManualAimReady)&&atomic_load(&Active)&&!atomic_load(&Editing)&&!atomic_load(&MenuOpen)&&point.y>self.safeAreaInsets.top+64&&CGRectContainsPoint(self.bounds,point);
+    return !atomic_load(&ExternalConflict)&&atomic_load(&Enabled)&&atomic_load(&Gameplay)&&atomic_load(&ManualAimReady)&&atomic_load(&Active)&&!atomic_load(&MenuOpen)&&point.y>self.safeAreaInsets.top+64&&CGRectContainsPoint(self.bounds,point);
 }
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    (void)event;[self refreshGeneration];
+    (void)event;[self refreshGeneration];if(atomic_load(&Editing)||atomic_load(&MenuOpen)) return;
     for(UITouch *touch in touches) {
         if(touch.view!=self) continue;
         CGPoint p=[touch locationInView:self];
@@ -332,7 +332,7 @@ static void Frame(id self,SEL selector) {
     [self setNeedsDisplay];
 }
 - (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    (void)event;if(![self refreshGeneration]) return;
+    (void)event;if(![self refreshGeneration]||atomic_load(&Editing)||atomic_load(&MenuOpen)) return;
     for(UITouch *touch in touches) {
         CGPoint p=[touch locationInView:self];
         if(touch==self.moveTouch) {

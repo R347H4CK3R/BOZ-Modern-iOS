@@ -358,14 +358,14 @@ static void Frame(id self,SEL selector) {
 @property(nonatomic) CGPoint aimPrevious;
 @end
 @implementation BOZModernButton
-- (BOOL)beginTracking:(UITouch *)touch withEvent:(UIEvent *)event {
-    self.aimPrevious=[touch locationInView:self.superview];return [super beginTracking:touch withEvent:event];
+- (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    self.aimPrevious=[touch locationInView:self.superview];return [super beginTrackingWithTouch:touch withEvent:event];
 }
-- (BOOL)continueTracking:(UITouch *)touch withEvent:(UIEvent *)event {
+- (BOOL)continueTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
     if(self.tag==BOZFire&&!atomic_load(&Editing)) {
         CGPoint p=[touch locationInView:self.superview];AddLook(p.x-self.aimPrevious.x,p.y-self.aimPrevious.y);self.aimPrevious=p;return YES;
     }
-    return [super continueTracking:touch withEvent:event];
+    return [super continueTrackingWithTouch:touch withEvent:event];
 }
 - (CGRect)titleRectForContentRect:(CGRect)contentRect {
     return CGRectMake(4,contentRect.size.height-19,contentRect.size.width-8,15);

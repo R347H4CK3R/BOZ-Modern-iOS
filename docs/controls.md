@@ -1,4 +1,6 @@
-# BOZ Combat HUD v3
+# BOZ Combat HUD v4
+
+Fixes v3 remaining at “Waiting for the game input bridge”: commands now run after the game’s regular engine-thread frame callback instead of depending on a yield import. The Controls menu identifies frame, input-manager and gameplay readiness separately. Native buttons are suppressed only when gameplay/input are ready.
 
 COD Mobile-inspired transparent combat controls, native combat-button suppression, and a centered BUY / USE control. Manual fire only. This small unsigned add-on targets Loader Fix v5 (135.8); keep Free Shop v2.
 

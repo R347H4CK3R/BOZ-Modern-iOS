@@ -12,15 +12,16 @@
 
 static uintptr_t B;
 static IMP OriginalShow;
-static _Atomic(uintptr_t) EngineThread;
+static _Atomic(unsigned) EngineFrames;
+static _Atomic(int) SawMainFrame;
 static _Atomic(unsigned) Requested,PendingTaps;
-static _Atomic(int) Enabled,Active,Editing,InputReady,Gameplay,ProfileDirty,YieldInstalled;
+static _Atomic(int) Enabled,Active,Editing,InputReady,Gameplay,ProfileDirty;
 static unsigned Sent;
 static _Atomic(int) UseAvailable;
 static _Atomic(float) UseX=0.5f,UseY=0.55f;
 static uintptr_t LastManager;
 static _Atomic(float) Sensitivity=0.60f;
-static _Atomic(int) InsideYield;
+static _Atomic(int) InsideFrame;
 static UIView *Overlay;
 static UIButton *MenuButton;
 static NSMutableArray<UIButton *> *Buttons;
@@ -38,7 +39,7 @@ static void Log(NSString *message) {
     if(!docs) return;
     NSString *folder=[docs stringByAppendingPathComponent:@"BOZDiagnostics"];
     [NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
-    NSData *line=[[NSString stringWithFormat:@"%@ controls-v3 %@\n",NSDate.date,message] dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *line=[[NSString stringWithFormat:@"%@ controls-v4 %@\n",NSDate.date,message] dataUsingEncoding:NSUTF8StringEncoding];
     for(NSString *name in @[@"controls.log",@"session.log"]) {
         int fd=open([[folder stringByAppendingPathComponent:name] fileSystemRepresentation],O_WRONLY|O_APPEND|O_CREAT,0600);
         if(fd>=0) { write(fd,line.bytes,line.length);close(fd); }
@@ -58,7 +59,12 @@ static UIViewController *Presenter(void) {
 }
 static BOOL Manager(uintptr_t *manager) {
     uintptr_t p=0,v=0;
-    if(!B || !Read(B+0x644bd0,&p,8) || !p || !Read(p,&v,8) || v!=B+0x5e5d90) return NO;
+    if(!B || !Read(B+0x644bd0,&p,8) || !p || !Read(p,&v,8)) return NO;
+    if(v!=B+0x5e5d90) {
+        static uintptr_t previous=0;
+        if(v!=previous) { previous=v;Log([NSString stringWithFormat:@"input-manager rejected vtable-offset=%llx expected=5e5d90",(unsigned long long)(v-B)]); }
+        return NO;
+    }
     *manager=p;return YES;
 }
 static BOOL InGame(void) {
@@ -192,11 +198,13 @@ static void TickControls(void) {
     uintptr_t manager=0;
     BOOL ready=Manager(&manager);
     atomic_store(&InputReady,ready);
-    BOOL gameplay=ready&&InGame();atomic_store(&Gameplay,gameplay);
+    BOOL gameplay=ready&&InGame();
+    int oldGameplay=atomic_exchange(&Gameplay,gameplay);
+    if(oldGameplay!=gameplay) Log([NSString stringWithFormat:@"gameplay-state active=%d",gameplay]);
     if(ready && atomic_load(&Enabled) && atomic_exchange(&ProfileDirty,0) && !ApplyProfile()) atomic_store(&ProfileDirty,1);
     if(!ready) { atomic_store(&UseAvailable,0);Sent=0;LastManager=0;return; }
     atomic_store(&UseAvailable,NativeUseReady(manager));
-    SyncNativeHUD(atomic_load(&Enabled));
+    SyncNativeHUD(atomic_load(&Enabled)&&gameplay&&atomic_load(&Active));
     if(manager!=LastManager) { Sent=0;LastManager=manager;Log(@"input-manager ready"); }
     BOOL allowed=BOZControlsTarget(BOZAll,atomic_load(&Enabled),atomic_load(&Active),gameplay,atomic_load(&Editing))!=0;
     unsigned pending=atomic_exchange(&PendingTaps,0);
@@ -226,35 +234,18 @@ static void TickControls(void) {
     }
     Sent=target;
 }
-static uint64_t ControlsYield(int32_t milliseconds) {
-    uint64_t (*original)(int32_t)=(void *)(B+0x85768);
-    BOOL engine=!pthread_main_np() && (uintptr_t)pthread_self()==atomic_load(&EngineThread);
-    BOOL outer=engine && !atomic_exchange(&InsideYield,1);
-    uint64_t result=original(milliseconds);
-    if(outer) { @autoreleasepool { TickControls(); } atomic_store(&InsideYield,0); }
-    return result;
-}
 static void Frame(id self,SEL selector) {
-    if(!pthread_main_np()) atomic_store(&EngineThread,(uintptr_t)pthread_self());
+    // Present first, then dispatch queued commands on the same engine thread.
+    // Do not require s3eDeviceYield: that import may not run during gameplay.
     ((void (*)(id,SEL))OriginalShow)(self,selector);
-}
-static BOOL InstallYield(void) {
-    uint32_t code[0x4000/4];
-    if(!Read(B+0xf4000,code,sizeof(code))) return NO;
-    for(size_t n=0;n+4<=sizeof(code)/sizeof(*code);n++) {
-        uintptr_t slot=BOZControlsThunkSlot(code+n,B+0xf4000+n*4);
-        if(slot<B+0x5b8000 || slot>=B+0x6dc000 || (slot&7)) continue;
-        uintptr_t value=0;if(!Read(slot,&value,8)) continue;
-        if(value==(uintptr_t)ControlsYield) return YES;
-        if(value!=B+0x85768) continue;
-        // This is a validated import cell in the game's writable S3E data,
-        // not executable code. An aligned atomic swap avoids a torn callback.
-        uintptr_t expected=value;
-        if(atomic_compare_exchange_strong((_Atomic(uintptr_t) *)slot,&expected,(uintptr_t)ControlsYield)) {
-            Log([NSString stringWithFormat:@"yield-import hooked slot-offset=%llx",(unsigned long long)(slot-B)]);return YES;
-        }
+    if(pthread_main_np()) {
+        if(!atomic_exchange(&SawMainFrame,1)) Log(@"frame-hook main-thread=1 input-dispatch=blocked");
+        return;
     }
-    return NO;
+    if(atomic_fetch_add(&EngineFrames,1)==0) Log(@"frame-hook engine-thread=1 first-frame=1");
+    if(atomic_exchange(&InsideFrame,1)) return;
+    @autoreleasepool { TickControls(); }
+    atomic_store(&InsideFrame,0);
 }
 
 @interface BOZControlsOverlay : UIView @end
@@ -357,7 +348,11 @@ static void Layout(void) {
 + (void)menu {
     atomic_store(&Requested,0);atomic_store(&PendingTaps,0);
     UIViewController *presenter=Presenter();if(!presenter||[presenter isKindOfClass:UIAlertController.class]) return;
-    NSString *status=atomic_load(&YieldInstalled)&&atomic_load(&InputReady)?@"Input bridge ready":@"Waiting for the game input bridge";
+    NSString *status;
+    if(!atomic_load(&EngineFrames)) status=atomic_load(&SawMainFrame)?@"Frame hook is on the UI thread; engine input blocked":@"Waiting for the first engine frame";
+    else if(!atomic_load(&InputReady)) status=@"Engine frame connected; native input manager not ready";
+    else if(!atomic_load(&Gameplay)) status=@"Input bridge connected; waiting for active gameplay";
+    else status=@"Frame input bridge connected";
     UIAlertController *menu=[UIAlertController alertControllerWithTitle:@"Combat HUD" message:[status stringByAppendingString:@"\nCOD Mobile-inspired HUD with manual fire. Enable at the main menu, then start a new round for the native swipe-aim layout. Native combat buttons are hidden while enabled. BUY / USE appears near the center when an interaction is available. FIRE and ADS are hold buttons. No target-based auto-fire is added."] preferredStyle:UIAlertControllerStyleAlert];
     [menu addAction:[UIAlertAction actionWithTitle:atomic_load(&Enabled)?@"Restore native buttons":@"Enable COD-style HUD" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         BOOL on=!atomic_load(&Enabled);atomic_store(&Enabled,on);atomic_store(&Requested,0);atomic_store(&PendingTaps,0);
@@ -390,7 +385,6 @@ static void Install(void) {
         B=base;OriginalShow=method_getImplementation(show);method_setImplementation(show,(IMP)Frame);
         Log(@"loaded supported-guest=1 manual-fire-only=1");
     }
-    if(!atomic_load(&YieldInstalled)) atomic_store(&YieldInstalled,InstallYield());
     UIWindow *window=Window();if(!window) return;
     if(!Overlay) {
         Overlay=[[BOZControlsOverlay alloc] initWithFrame:window.bounds];Buttons=[NSMutableArray array];

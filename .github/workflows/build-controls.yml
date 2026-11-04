@@ -8,6 +8,7 @@ on:
       - 'src/BOZControlsBridge.h'
       - 'tests/test_controls_bridge.c'
       - 'tests/test_controls_native.py'
+      - 'tests/test_controls_frame.py'
       - 'docs/controls.md'
 concurrency:
   group: boz-controls
@@ -24,6 +25,8 @@ jobs:
         run: |
           clang -std=c11 -Wall -Wextra -Werror -Isrc tests/test_controls_bridge.c -o "$RUNNER_TEMP/controls-tests"
           "$RUNNER_TEMP/controls-tests"
+      - name: Test frame input dispatch without yield calls
+        run: python3 tests/test_controls_frame.py
       - name: Compile unsigned ARM64 controls add-on
         run: |
           mkdir output

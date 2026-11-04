@@ -1,4 +1,6 @@
-# BOZ Combat HUD v4
+# BOZ Combat HUD v5
+
+v5 removes v4 offscreen combat-widget movement and forced native enabled-state changes after reported round-entry crashes. Uses native visibility only; existing native hit-test code rejects invisible widgets. The crash cause is not confirmed without a native crash stack. Controls > Native button hiding toggles suppression independently for diagnosis; default ON. Ready-frame milestones are logged.
 
 Fixes v3 remaining at “Waiting for the game input bridge”: commands now run after the game’s regular engine-thread frame callback instead of depending on a yield import. The Controls menu identifies frame, input-manager and gameplay readiness separately. Native buttons are suppressed only when gameplay/input are ready.
 
@@ -11,9 +13,9 @@ COD Mobile-inspired transparent combat controls, native combat-button suppressio
 5. BUY / USE appears near the center only when the game's own interaction predicate permits it. Native purchase/interaction text and prices move below it. Its background is transparent; it does not grant free wall weapons or bypass prices, perk requirements or proximity checks.
 6. Controls > Move buttons lets you drag controls, including BUY / USE. Finish moving buttons resumes combat input. Leave the right aim area uncovered. Positions and sensitivity persist.
 
-Enabled replacement mode hides and disables the matched native combat widgets and native buy Button/Image, preserving the buy text label. Hidden native buttons no longer receive hit tests. Movement/swipe-input handling, menus, health, ammo, score and perk indicators remain native. Existing manual touch gestures remain part of the native movement/aim layer.
+Enabled replacement mode hides the matched native combat widgets and native buy Button/Image, preserving the buy text label. Hidden native buttons no longer receive hit tests. Movement/swipe-input handling, menus, health, ammo, score and perk indicators remain native. Existing manual touch gestures remain part of the native movement/aim layer.
 
-Controls > Restore native buttons stops add-on commands, restores matched native widgets and restores the buy prompt's original position. Native Touch mode/sensitivity remain selected; restore those through the original Controls options if desired. To uninstall, restore native buttons, close the game, then remove only BOZControls.dylib.
+Controls > Restore native buttons stops add-on commands, restores matched native visibility and restores the buy prompt's original position. Native Touch mode/sensitivity remain selected; restore those through the original Controls options if desired. To uninstall, restore native buttons, close the game, then remove only BOZControls.dylib.
 
 This is an experimental replacement combat overlay, not an exact COD Mobile UI or a recreation of its gameplay. Native controls are suppressed at runtime; game assets are not deleted. If a widget is missing from the current UI tree, restoration waits until that tree is available again. Phone rendering, touch feel, pause transitions and layout still need device testing.
 

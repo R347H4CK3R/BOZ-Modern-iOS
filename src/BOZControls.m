@@ -16,6 +16,7 @@ static _Atomic(unsigned) EngineFrames;
 static _Atomic(int) SawMainFrame;
 static _Atomic(unsigned) Requested,PendingTaps;
 static _Atomic(int) Enabled,Active,Editing,InputReady,Gameplay,ProfileDirty;
+static _Atomic(int) SuppressNative=1;
 static unsigned Sent;
 static _Atomic(int) UseAvailable;
 static _Atomic(float) UseX=0.5f,UseY=0.55f;
@@ -39,7 +40,7 @@ static void Log(NSString *message) {
     if(!docs) return;
     NSString *folder=[docs stringByAppendingPathComponent:@"BOZDiagnostics"];
     [NSFileManager.defaultManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:nil];
-    NSData *line=[[NSString stringWithFormat:@"%@ controls-v4 %@\n",NSDate.date,message] dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *line=[[NSString stringWithFormat:@"%@ controls-v5 %@\n",NSDate.date,message] dataUsingEncoding:NSUTF8StringEncoding];
     for(NSString *name in @[@"controls.log",@"session.log"]) {
         int fd=open([[folder stringByAppendingPathComponent:name] fileSystemRepresentation],O_WRONLY|O_APPEND|O_CREAT,0600);
         if(fd>=0) { write(fd,line.bytes,line.length);close(fd); }
@@ -103,7 +104,7 @@ static const HiddenWidget NativeWidgets[]={
     {"melee",0},{"melee_lefty",0},{"Melee_Btn",0},{"Melee_Btn_lefty",0},
     {"Button",2},{"Image",2}
 };
-typedef struct { uintptr_t identity;size_t templateIndex;unsigned flags;int32_t position[2];BOOL geometry; } WidgetSnapshot;
+typedef struct { uintptr_t identity;size_t templateIndex;unsigned flags; } WidgetSnapshot;
 static WidgetSnapshot SavedWidgets[512];
 typedef struct { uintptr_t identity;int32_t position[2]; } PromptSnapshot;
 static PromptSnapshot SavedPrompts[64];
@@ -120,21 +121,14 @@ static void ProcessNativeWidget(size_t index,uintptr_t element,BOOL replace) {
             if(!empty) return; // Fail open rather than hide without restoration data.
             record=empty;record->identity=element;record->templateIndex=index;
             unsigned visible=((int (*)(uintptr_t,unsigned))(B+0x4cc0dc))(element,2);
-            unsigned enabled=((int (*)(uintptr_t,unsigned))(B+0x4cc0dc))(element,1);
-            record->flags=(visible?2:0)|(enabled?1:0);
-            record->geometry=Read(element+0xa0,record->position,sizeof(record->position));
+            record->flags=visible?2:0;
         }
         ((void (*)(uintptr_t,int))(B+0x4cdaf8))(element,0);
-        ((void (*)(uintptr_t,int))(B+0x4cdb94))(element,0);
-        // The game can re-show a contextual icon during its next update.
-        // Keep its old hit target outside the viewport as well as invisible.
-        int32_t position[2]={-30000,-30000},current[2]={0};
-        if(record->geometry&&Read(element+0xa0,current,sizeof(current))&&(current[0]!=position[0]||current[1]!=position[1])) ((void (*)(uintptr_t,const int32_t *,int))(B+0x4cb010))(element,position,0);
+        // Visibility alone excludes the native button from hit testing.
+        // Keep its geometry and enabled state intact for game-side updates.
     } else if(record) {
-        if(record->geometry) ((void (*)(uintptr_t,const int32_t *,int))(B+0x4cb010))(element,record->position,0);
         BOOL permit=NativeWidgets[index].scope!=2||atomic_load(&UseAvailable);
         ((void (*)(uintptr_t,int))(B+0x4cdaf8))(element,permit&&!!(record->flags&2));
-        ((void (*)(uintptr_t,int))(B+0x4cdb94))(element,permit&&!!(record->flags&1));
         record->identity=0;
     }
 }
@@ -204,7 +198,10 @@ static void TickControls(void) {
     if(ready && atomic_load(&Enabled) && atomic_exchange(&ProfileDirty,0) && !ApplyProfile()) atomic_store(&ProfileDirty,1);
     if(!ready) { atomic_store(&UseAvailable,0);Sent=0;LastManager=0;return; }
     atomic_store(&UseAvailable,NativeUseReady(manager));
-    SyncNativeHUD(atomic_load(&Enabled)&&gameplay&&atomic_load(&Active));
+    SyncNativeHUD(atomic_load(&Enabled)&&atomic_load(&SuppressNative)&&gameplay&&atomic_load(&Active));
+    static unsigned readyFrames=0;
+    if(gameplay) { readyFrames++;if(readyFrames<=3||readyFrames==60) Log([NSString stringWithFormat:@"ready-frame=%u native-hiding=%d",readyFrames,atomic_load(&SuppressNative)]); }
+    else readyFrames=0;
     if(manager!=LastManager) { Sent=0;LastManager=manager;Log(@"input-manager ready"); }
     BOOL allowed=BOZControlsTarget(BOZAll,atomic_load(&Enabled),atomic_load(&Active),gameplay,atomic_load(&Editing))!=0;
     unsigned pending=atomic_exchange(&PendingTaps,0);
@@ -360,6 +357,11 @@ static void Layout(void) {
         if(on) atomic_store(&ProfileDirty,1);
         Log([NSString stringWithFormat:@"enabled=%d",on]);
     }]];
+    [menu addAction:[UIAlertAction actionWithTitle:atomic_load(&SuppressNative)?@"Native button hiding: ON":@"Native button hiding: OFF" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        BOOL hide=!atomic_load(&SuppressNative);atomic_store(&SuppressNative,hide);
+        [NSUserDefaults.standardUserDefaults setBool:hide forKey:[Pref stringByAppendingString:@"SuppressNative"]];
+        Log([NSString stringWithFormat:@"native-hiding selected=%d",hide]);
+    }]];
     [menu addAction:[UIAlertAction actionWithTitle:atomic_load(&Editing)?@"Finish moving buttons":@"Move buttons" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
         BOOL edit=!atomic_load(&Editing);atomic_store(&Editing,edit);atomic_store(&Requested,0);atomic_store(&PendingTaps,0);
         for(UIButton *button in Buttons) for(UIGestureRecognizer *recognizer in button.gestureRecognizers) recognizer.enabled=edit;
@@ -412,6 +414,7 @@ __attribute__((constructor)) static void Start(void) {
     dispatch_async(dispatch_get_main_queue(),^{
         atomic_store(&Enabled,[NSUserDefaults.standardUserDefaults boolForKey:[Pref stringByAppendingString:@"Enabled"]]);
         float saved=[NSUserDefaults.standardUserDefaults floatForKey:[Pref stringByAppendingString:@"Sensitivity"]];if(isfinite(saved)&&saved>=0.1&&saved<=1) Sensitivity=saved;
+        if([NSUserDefaults.standardUserDefaults objectForKey:[Pref stringByAppendingString:@"SuppressNative"]]) atomic_store(&SuppressNative,[NSUserDefaults.standardUserDefaults boolForKey:[Pref stringByAppendingString:@"SuppressNative"]]);
         atomic_store(&ProfileDirty,1);atomic_store(&Active,UIApplication.sharedApplication.applicationState==UIApplicationStateActive);
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ atomic_store(&Active,0);atomic_store(&Requested,0);atomic_store(&PendingTaps,0); }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ atomic_store(&Active,1); }];

@@ -8,14 +8,14 @@ static inline unsigned BOZControlsStateFlag(const char *name) {
     return 0;
 }
 static inline int BOZControlsStatesPlayable(unsigned flags) { return (flags&3)==1; }
-enum { BOZFire=1, BOZAim=2, BOZReload=4, BOZSwap=8 };
+enum { BOZFire=1, BOZAim=2, BOZReload=4, BOZSwap=8, BOZMelee=16, BOZGrenade=32, BOZCrouch=64, BOZTactical=128, BOZUse=256, BOZAll=511, BOZContinuous=163, BOZDiscrete=348 };
 static inline unsigned BOZControlsTarget(unsigned requested,int enabled,int active,int gameplay,int editing) {
-    return enabled && active && gameplay && !editing ? requested & 15u : 0;
+    return enabled && active && gameplay && !editing ? requested & BOZAll : 0;
 }
 // Discrete taps survive touch-down + touch-up between engine samples.
 // A previously sent discrete action must release before a queued next press.
 static inline unsigned BOZControlsQueuedTarget(unsigned requested,unsigned pending,unsigned sent,int allowed) {
-    return allowed ? (requested & 3u) | (pending & 12u & ~sent) : 0;
+    return allowed ? (requested & BOZContinuous) | (pending & BOZAll & ~sent) : 0;
 }
 // Marmalade's ARM64 import thunks: ADRP x16; LDR x17; ADD x16; BR x17.
 static inline uintptr_t BOZControlsThunkSlot(const uint32_t *w,uintptr_t pc) {

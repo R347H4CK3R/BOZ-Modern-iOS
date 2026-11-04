@@ -11,7 +11,7 @@ int main(int argc,char **argv) {
     assert(BOZControlsTarget(7,1,1,1,1)==0);
     assert(BOZControlsTarget(8,1,1,1,0)==8); // manual swap survives masking
     assert(BOZControlsTarget(8,1,1,0,0)==0); // no swap while paused
-    assert(BOZControlsTarget(16,1,1,1,0)==0); // unknown input rejected
+    assert(BOZControlsTarget(512,1,1,1,0)==0); // unknown input rejected
     // SWAP tap ends before the next sample, but its queued press survives.
     unsigned queued=BOZSwap;
     unsigned pulse=BOZControlsQueuedTarget(0,queued,0,1);
@@ -21,6 +21,11 @@ int main(int argc,char **argv) {
     assert(BOZControlsQueuedTarget(0,BOZSwap,0,0)==0); // pause discards taps
     assert(BOZControlsQueuedTarget(0,BOZReload,0,1)==BOZReload);
     assert(BOZControlsQueuedTarget(BOZFire|BOZAim,BOZSwap,0,1)==11);
+    assert(BOZControlsQueuedTarget(0,BOZUse,0,1)==BOZUse);
+    assert(BOZControlsQueuedTarget(0,BOZUse,BOZUse,1)==0);
+    assert(BOZControlsQueuedTarget(BOZGrenade,0,BOZGrenade,1)==BOZGrenade);
+    assert(BOZControlsQueuedTarget(0,BOZMelee|BOZCrouch,0,1)==(BOZMelee|BOZCrouch));
+    assert(BOZControlsTarget(BOZAll,1,1,0,0)==0);
     unsigned playing=BOZControlsStateFlag("GameStateIngame");
     unsigned paused=BOZControlsStateFlag("GameStatePaused");
     assert(BOZControlsStatesPlayable(playing));

@@ -26,13 +26,18 @@ static _Atomic(float) Sensitivity=0.60f;
 static _Atomic(int) InsideFrame,MenuOpen,ManualAimReady,ExternalConflict;
 static pthread_mutex_t AxisLock=PTHREAD_MUTEX_INITIALIZER;
 static BOZAxis Movement;
-static BOZLook RelativeLook;
+static BOZLookChannels LookStreams;
+static _Atomic(unsigned) InputEpoch;
 static void Install(void);
 static void ResetAxes(void) {
-    pthread_mutex_lock(&AxisLock);Movement=(BOZAxis){0,0};BOZResetLook(&RelativeLook);pthread_mutex_unlock(&AxisLock);
+    atomic_fetch_add(&InputEpoch,1);
+    pthread_mutex_lock(&AxisLock);Movement=(BOZAxis){0,0};BOZResetLookChannels(&LookStreams);pthread_mutex_unlock(&AxisLock);
 }
 static void AddLook(float dx,float dy) {
-    pthread_mutex_lock(&AxisLock);BOZAccumulateLook(&RelativeLook,dx,dy);pthread_mutex_unlock(&AxisLock);
+    pthread_mutex_lock(&AxisLock);BOZAddLookChannel(&LookStreams,BOZSurfaceLook,dx,dy);pthread_mutex_unlock(&AxisLock);
+}
+static void AddFireLook(float dx,float dy) {
+    pthread_mutex_lock(&AxisLock);BOZAddLookChannel(&LookStreams,BOZFireLook,dx,dy);pthread_mutex_unlock(&AxisLock);
 }
 static UIView *Overlay;
 static UIButton *MenuButton;
@@ -215,8 +220,8 @@ static void DispatchAxes(uintptr_t manager,BOOL allowed) {
     static BOOL sent=NO;
     BOZAxis move={0},look={0};
     pthread_mutex_lock(&AxisLock);
-    if(allowed) { move=Movement;look=BOZConsumeLook(&RelativeLook,0.02f*atomic_load(&Sensitivity)/0.60f); }
-    else { Movement=(BOZAxis){0,0};BOZResetLook(&RelativeLook); }
+    if(allowed) { move=Movement;look=BOZTakeLookChannels(&LookStreams,0.02f*atomic_load(&Sensitivity)/0.60f); }
+    else { Movement=(BOZAxis){0,0};BOZResetLookChannels(&LookStreams); }
     pthread_mutex_unlock(&AxisLock);
     if(!allowed&&!sent) return;
     void (*analog)(void *,int,float,float,float,float,float)=(void *)(B+0x1ef214);
@@ -294,12 +299,18 @@ static void Frame(id self,SEL selector) {
 @property(nonatomic) CGPoint moveOrigin;
 @property(nonatomic) CGPoint lookLast;
 @property(nonatomic) CGSize lastSize;
+@property(nonatomic) unsigned captureEpoch;
 - (void)resetTouches;
 @end
 @implementation BOZModernSurface
 - (void)resetTouches {
     self.moveTouch=nil;self.lookTouch=nil;_owners=(BOZFingerOwners){0};ResetAxes();
     atomic_store(&Requested,0);atomic_store(&PendingTaps,0);[self setNeedsDisplay];
+}
+- (BOOL)refreshGeneration {
+    unsigned current=atomic_load(&InputEpoch);
+    if(self.captureEpoch==current) return YES;
+    self.captureEpoch=current;self.moveTouch=nil;self.lookTouch=nil;_owners=(BOZFingerOwners){0};[self setNeedsDisplay];return NO;
 }
 - (void)layoutSubviews {
     [super layoutSubviews];
@@ -310,7 +321,7 @@ static void Frame(id self,SEL selector) {
     return !atomic_load(&ExternalConflict)&&atomic_load(&Enabled)&&atomic_load(&Gameplay)&&atomic_load(&ManualAimReady)&&atomic_load(&Active)&&!atomic_load(&Editing)&&!atomic_load(&MenuOpen)&&point.y>self.safeAreaInsets.top+64&&CGRectContainsPoint(self.bounds,point);
 }
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    (void)event;
+    (void)event;[self refreshGeneration];
     for(UITouch *touch in touches) {
         if(touch.view!=self) continue;
         CGPoint p=[touch locationInView:self];
@@ -321,7 +332,7 @@ static void Frame(id self,SEL selector) {
     [self setNeedsDisplay];
 }
 - (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    (void)event;
+    (void)event;if(![self refreshGeneration]) return;
     for(UITouch *touch in touches) {
         CGPoint p=[touch locationInView:self];
         if(touch==self.moveTouch) {
@@ -338,11 +349,14 @@ static void Frame(id self,SEL selector) {
     for(UITouch *touch in touches) {
         BOZReleaseFinger(&_owners,(uintptr_t)(__bridge void *)touch);
         if(touch==self.moveTouch) { self.moveTouch=nil;pthread_mutex_lock(&AxisLock);Movement=(BOZAxis){0,0};pthread_mutex_unlock(&AxisLock); }
-        if(touch==self.lookTouch) { self.lookTouch=nil;pthread_mutex_lock(&AxisLock);BOZResetLook(&RelativeLook);pthread_mutex_unlock(&AxisLock); }
+        if(touch==self.lookTouch) self.lookTouch=nil;
     }
     [self setNeedsDisplay];
 }
-- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event { [self touchesEnded:touches withEvent:event]; }
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    if(self.lookTouch&&[touches containsObject:self.lookTouch]) { pthread_mutex_lock(&AxisLock);BOZCancelLookChannel(&LookStreams,BOZSurfaceLook);pthread_mutex_unlock(&AxisLock); }
+    [self touchesEnded:touches withEvent:event];
+}
 - (void)drawRect:(CGRect)rect {
     (void)rect;if(!self.moveTouch) return;
     pthread_mutex_lock(&AxisLock);BOZAxis a=Movement;pthread_mutex_unlock(&AxisLock);
@@ -356,16 +370,24 @@ static void Frame(id self,SEL selector) {
 // Original vector icons; no game artwork or fixed display-size assumptions.
 @interface BOZModernButton : UIButton
 @property(nonatomic) CGPoint aimPrevious;
+@property(nonatomic) unsigned inputEpoch;
 @end
 @implementation BOZModernButton
 - (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
-    self.aimPrevious=[touch locationInView:self.superview];return [super beginTrackingWithTouch:touch withEvent:event];
+    self.inputEpoch=atomic_load(&InputEpoch);self.aimPrevious=[touch locationInView:self.superview];return [super beginTrackingWithTouch:touch withEvent:event];
 }
 - (BOOL)continueTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    if(self.inputEpoch!=atomic_load(&InputEpoch)) return NO;
     if(self.tag==BOZFire&&!atomic_load(&Editing)) {
-        CGPoint p=[touch locationInView:self.superview];AddLook(p.x-self.aimPrevious.x,p.y-self.aimPrevious.y);self.aimPrevious=p;return YES;
+        CGPoint p=[touch locationInView:self.superview];AddFireLook(p.x-self.aimPrevious.x,p.y-self.aimPrevious.y);self.aimPrevious=p;return YES;
     }
     return [super continueTrackingWithTouch:touch withEvent:event];
+}
+- (void)cancelTrackingWithEvent:(UIEvent *)event {
+    [super cancelTrackingWithEvent:event];
+    atomic_fetch_and(&Requested,~(unsigned)self.tag);atomic_fetch_and(&PendingTaps,~(unsigned)self.tag);
+    if(self.tag==BOZFire) { pthread_mutex_lock(&AxisLock);BOZCancelLookChannel(&LookStreams,BOZFireLook);pthread_mutex_unlock(&AxisLock); }
+    self.highlighted=NO;
 }
 - (CGRect)titleRectForContentRect:(CGRect)contentRect {
     return CGRectMake(4,contentRect.size.height-19,contentRect.size.width-8,15);
@@ -437,7 +459,7 @@ static void Layout(void) {
 }
 @implementation BOZModernControls
 + (void)down:(UIButton *)button {
-    if(atomic_load(&Editing)) return;
+    if(atomic_load(&Editing)||((BOZModernButton *)button).inputEpoch!=atomic_load(&InputEpoch)) return;
     unsigned bit=(unsigned)button.tag,previous=atomic_fetch_or(&Requested,bit);
     if(!(previous&bit) && (bit&BOZAll)) atomic_fetch_or(&PendingTaps,bit);
 }

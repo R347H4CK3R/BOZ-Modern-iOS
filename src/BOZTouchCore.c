@@ -36,3 +36,21 @@ void BOZReleaseFinger(BOZFingerOwners *owners,uintptr_t finger) {
     if(owners->move==finger) owners->move=0;
     if(owners->look==finger) owners->look=0;
 }
+void BOZAddLookChannel(BOZLookChannels *channels,int source,float dx,float dy) {
+    if(!channels) return;
+    if(source==BOZSurfaceLook) BOZAccumulateLook(&channels->surface,dx,dy);
+    if(source==BOZFireLook) BOZAccumulateLook(&channels->fire,dx,dy);
+}
+void BOZCancelLookChannel(BOZLookChannels *channels,int source) {
+    if(!channels) return;
+    if(source==BOZSurfaceLook) BOZResetLook(&channels->surface);
+    if(source==BOZFireLook) BOZResetLook(&channels->fire);
+}
+void BOZResetLookChannels(BOZLookChannels *channels) {
+    if(channels) { BOZResetLook(&channels->surface);BOZResetLook(&channels->fire); }
+}
+BOZAxis BOZTakeLookChannels(BOZLookChannels *channels,float scale) {
+    if(!channels) return (BOZAxis){0,0};
+    BOZAxis a=BOZConsumeLook(&channels->surface,scale),b=BOZConsumeLook(&channels->fire,scale);
+    return Bound(a.x+b.x,a.y+b.y);
+}

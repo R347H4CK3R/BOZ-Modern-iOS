@@ -11,6 +11,7 @@ on:
       - 'tests/test_integrated_native.py'
       - 'tests/test_package_integrated_input.py'
       - 'tests/test_modern_frame.py'
+      - 'tests/test_modern_tracking.py'
       - 'tools/package_integrated_input.py'
       - 'docs/integrated-input.md'
 permissions:
@@ -30,6 +31,7 @@ jobs:
           "$RUNNER_TEMP/touch-tests"
           python3 tests/test_package_integrated_input.py
           python3 tests/test_modern_frame.py
+          python3 tests/test_modern_tracking.py
       - name: Build unsigned ARM64 integrated input module
         run: |
           mkdir output

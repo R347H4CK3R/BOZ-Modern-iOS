@@ -22,22 +22,24 @@
 
 ### Task 1: Input math and ABI contract
 Files: src/BOZTouchCore.h/.c, tests/test_touch_core.c, tests/test_integrated_native.py.
-- [ ] Write failing tests for dead zone, diagonal normalization, look accumulation/consumption, cancellation and invalid floats.
-- [ ] Implement bounded vector/dead-zone and frame-consumed relative look helpers.
-- [ ] Execute actual analog publisher and native aim-assist copy routine under nonzero ASLR; verify packet and zero flag.
-- [ ] Commit checked sources/tests.
+- [x] Write failing tests for dead zone, diagonal normalization, look accumulation/consumption, cancellation and invalid floats.
+- [x] Implement bounded vector/dead-zone and frame-consumed relative look helpers.
+- [x] Execute actual analog publisher and native aim-assist copy routine under nonzero ASLR; verify packet and zero flag.
+- [x] Commit checked sources/tests.
 
 ### Task 2: Integrated input ownership
 Files: src/BOZModernInput.m.
-- [ ] Build from v5 observed action bridge, replace native movement/gesture dependence with a multitouch surface.
-- [ ] Add floating movement stick and owned look finger; release/reset on every lifecycle boundary.
-- [ ] Disable native aim-assist preference/current player flag and log verified writes.
-- [ ] Keep hazardous suppression optional, OFF initially; reject external duplicate controls.
-- [ ] Compile ARM64 unsigned module and run actual frame callback tests.
+- [x] Build from v5 observed action bridge, replace native movement/gesture dependence with a multitouch surface.
+- [x] Add floating movement stick and owned look finger; release/reset on every lifecycle boundary.
+- [x] Disable native aim-assist preference/current player flag and log verified writes.
+- [x] Keep hazardous suppression optional, OFF initially; reject external duplicate controls.
+- [x] Compile ARM64 unsigned module and run actual frame callback tests.
 
 ### Task 3: Package and verify unsigned IPA
 Files: tools/package_integrated_input.py, tests/test_package_integrated_input.py, .github/workflows/build-integrated-input.yml.
-- [ ] Add LC_LOAD_DYLIB only in existing verified header padding; preserve native code offsets and bytes.
-- [ ] Embed module, bump build 135.20, preserve bundle ID/assets, reject any signature and verify load dependency.
-- [ ] Test malformed/padding/signature/duplicate inputs and package with the verified pinned baseline.
-- [ ] Run CI, independent review, publish test release and checksums. Leave stable catalog unchanged.
+- [x] Add LC_LOAD_DYLIB only in existing verified header padding; preserve native code offsets and bytes.
+- [x] Embed module, bump build 135.20, preserve bundle ID/assets, reject any signature and verify load dependency.
+- [x] Test malformed/padding/signature/duplicate inputs and package with the verified pinned baseline.
+- [x] Run CI, independent review, publish test release and checksums. Leave stable catalog unchanged.
+
+Delivery: test release https://github.com/R347H4CK3R/BOZ-Strata-Source/releases/tag/integrated-input-v1. CI run 41765802190 passed. Stable catalog is unchanged; phone validation remains outstanding. See docs/integrated-progress.md for artifact hashes and review corrections.
